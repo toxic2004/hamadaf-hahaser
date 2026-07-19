@@ -27,6 +27,7 @@
   <div id="authModal" class="overlay open"><div class="modal" style="max-width:430px;align-self:center"><div class="head"><h2>כניסה למדף שלי</h2></div><p>התחברות מאפשרת לסנכרן את הספרים בין כל המכשירים.</p><div class="field"><label>כתובת אימייל</label><input id="authEmail" type="email" autocomplete="email"></div><div class="field"><label>סיסמה</label><input id="authPassword" type="password" minlength="6" autocomplete="current-password"></div><div class="actions"><button id="signIn" class="primary">כניסה</button><button id="signUp" class="ghost">יצירת חשבון</button></div><p id="authMessage" class="sub"></p></div></div>
   <script async src="https://cse.google.com/cse.js?cx=c50b071c83d564187"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script>
     const INITIAL=["הסוד","חשוב והתעשר","הנזיר שמכר את הפרארי שלו","כוח בלתי מוגבל","הרגלים אטומיים","חוק החמש שניות","להעיר את הענק שבפנים","היה הגיבור של חייך","מועדון ה 5 בבוקר","להשיג הכול","אבא עשיר אבא עני","האיש העשיר ביותר בבבל","הפסיכולוגיה של הכסף","אשליית הכסף","מיליונר ברגע","סודות של מיליונרים","DotCom Secrets","מאפס לאחד","The 10X Rule","עקרון 80/20","השקעות לעצלנים","Deep Work","4 שעות עבודה בשבוע","לגרום לדברים לקרות","כוחו של הרגל","סדר את המיטה שלך","גריט","No Excuses","Clear Thinking","שבעת ההרגלים של אנשים אפקטיביים","100 דברים שאנשים מצליחים עושים","כיצד לרכוש ידידים והשפעה","מוקף באידיוטים","כוח. 48 החוקים","ארבע ההסכמות","ההסכמה החמישית","האומץ להעז","מי הזיז את הגבינה שלי","כך מקבלים החלטה","השפעה. הפסיכולוגיה של השכנוע","האדם מחפש משמעות","כוחו של הרגע הזה","האלכימאי","כוחו של התת מודע","לשבור את ההרגל להיות עצמכם","The Happiness Advantage","מהרס עצמי לערך עצמי","לחשוב מהר לחשוב לאט","כשהדברים מתפרקים","לממש את הטוב שבך","חוכמת האדישות","החיים שתמיד רצית","אהבה","מהפכת המשמעות","הפסיכולוגיה של האושר","אל תאמינו לכל מה שאתם חושבים","איינשטיין בזמן ובמרחב","להזמין מציאות","כוחה של שיחה","כוחו של מיקוד","ליצור מציאות","הקרבות הגדולים","אנושות 2.0","לא נשוב אחור"];
     const KEY='hamadaf-hahaser-v1';
@@ -38,7 +39,31 @@
     async function init(){const saved=localStorage.getItem(KEY);state.books=saved?JSON.parse(saved):INITIAL.map((title,i)=>({id:crypto.randomUUID(),title,author:'',cover:'',notes:'',status:'מחפש',created:Date.now()-i}));bind();render();const {data}=await db.auth.getSession();if(data.session)await connected(data.session.user);db.auth.onAuthStateChange((event,session)=>{if(event==='SIGNED_IN'&&session)connected(session.user);if(event==='SIGNED_OUT')disconnected()})}
     function bind(){search.oninput=render;sort.onchange=render;view.onclick=()=>{state.view=state.view==='grid'?'list':'grid';view.textContent=state.view==='grid'?'☷ רשימה':'▦ כרטיסיות';render()};exportExcel.onclick=exportToExcel;add.onclick=openAdd;document.querySelectorAll('.nav').forEach(n=>n.onclick=()=>changePage(n));document.querySelectorAll('.close').forEach(b=>b.onclick=()=>{b.closest('.overlay').classList.remove('open');unlockScroll()});cancel.onclick=()=>{modal.classList.remove('open');unlockScroll()};save.onclick=saveBook;lookup.onclick=findBook;image.onchange=loadImage;signIn.onclick=login;signUp.onclick=register;signOut.onclick=()=>db.auth.signOut();[modal,detailModal,coverSearchModal].forEach(m=>m.onclick=e=>{if(e.target===m){m.classList.remove('open');unlockScroll()}});document.addEventListener('click',captureCoverChoice,true);unlockScroll()}
     function unlockScroll(){document.documentElement.style.setProperty('overflow-y','auto','important');document.body.style.setProperty('overflow-y','auto','important');document.body.style.setProperty('position','static','important');document.body.style.removeProperty('height')}
-    async function exportToExcel(){if(!state.books.length)return toast('אין ספרים לייצוא');const quote=v=>'"'+String(v??'').replace(/"/g,'""')+'"';const headers=['שם הספר','שם המחבר','מצב','הערות','תאריך הוספה','קיימת כריכה'];const rows=[headers,...[...state.books].sort((a,b)=>b.created-a.created).map(b=>[b.title,b.author,b.status,b.notes,new Date(b.created).toLocaleDateString('he-IL'),b.cover?'כן':'לא'])];const csv='sep=,\r\n'+rows.map(row=>row.map(quote).join(',')).join('\r\n');const name='המדף-החסר-'+new Date().toISOString().slice(0,10)+'.csv';const file=new File(['\ufeff'+csv],name,{type:'text/csv;charset=utf-8'});if(/iPhone|iPad|iPod/.test(navigator.userAgent)&&navigator.canShare&&navigator.canShare({files:[file]})){try{await navigator.share({files:[file],title:'המדף החסר'});return}catch(e){if(e.name==='AbortError')return}}const url=URL.createObjectURL(file),a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),2000);toast('קובץ Excel ירד למכשיר')}
+    async function exportToExcel(){
+      if(!state.books.length)return toast('אין ספרים לייצוא');
+      if(typeof XLSX==='undefined')return toast('רכיב הייצוא עדיין לא נטען. נסה שוב בעוד רגע');
+      const headers=['שם הספר','שם המחבר','מצב','הערות','תאריך הוספה','קיימת כריכה'];
+      const rows=[headers,...[...state.books].sort((a,b)=>b.created-a.created).map(b=>[
+        b.title,b.author,b.status,b.notes,new Date(b.created).toLocaleDateString('he-IL'),b.cover?'כן':'לא'
+      ])];
+      const sheet=XLSX.utils.aoa_to_sheet(rows);
+      sheet['!cols']=[{wch:34},{wch:28},{wch:14},{wch:42},{wch:16},{wch:14}];
+      sheet['!autofilter']={ref:'A1:F'+rows.length};
+      const book=XLSX.utils.book_new();
+      book.Workbook={Views:[{RTL:true}]};
+      XLSX.utils.book_append_sheet(book,sheet,'הספרים שלי');
+      const bytes=XLSX.write(book,{bookType:'xlsx',type:'array'});
+      const name='המדף החסר '+new Date().toISOString().slice(0,10)+'.xlsx';
+      const file=new File([bytes],name,{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+      if(/iPhone|iPad|iPod/.test(navigator.userAgent)&&navigator.canShare&&navigator.canShare({files:[file]})){
+        try{await navigator.share({files:[file],title:'המדף החסר'});return}
+        catch(e){if(e.name==='AbortError')return}
+      }
+      const url=URL.createObjectURL(file),a=document.createElement('a');
+      a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url),2000);
+      toast('קובץ Excel בעברית ירד למכשיר');
+    }
     async function login(){const email=authEmail.value.trim(),password=authPassword.value;if(!email||!password)return authMessage.textContent='צריך להזין אימייל וסיסמה';authMessage.textContent='מתחבר...';const {error}=await db.auth.signInWithPassword({email,password});authMessage.textContent=error?'הכניסה נכשלה. בדוק את האימייל והסיסמה.':''}
     async function register(){const email=authEmail.value.trim(),password=authPassword.value;if(!email||password.length<6)return authMessage.textContent='צריך אימייל וסיסמה של לפחות 6 תווים';authMessage.textContent='יוצר חשבון...';const {data,error}=await db.auth.signUp({email,password,options:{emailRedirectTo:location.origin+location.pathname}});if(error)return authMessage.textContent='יצירת החשבון נכשלה: '+error.message;authMessage.textContent=data.session?'החשבון נוצר בהצלחה':'נשלח אליך אימייל אישור. אשר אותו ואז לחץ על כניסה.'}
     async function connected(user){state.user=user;authModal.classList.remove('open');signOut.style.display='inline-block';syncText.textContent='מסונכרן לחשבון '+user.email;await loadRemote()}
