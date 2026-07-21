@@ -15,6 +15,7 @@
 }
 html,
 body {
+  width: 100%;
   height: auto !important;
   min-height: 100%;
   overflow-x: hidden !important;
@@ -26,7 +27,8 @@ body {
   color: var(--ink);
   font-family: Arial, sans-serif;
   min-height: 100vh;
-  padding-bottom: 130px !important;
+  min-height: 100dvh;
+  padding-bottom: calc(130px + env(safe-area-inset-bottom)) !important;
   touch-action: pan-y;
 }
 button,
@@ -34,6 +36,7 @@ input,
 textarea,
 select {
   font: inherit;
+  min-width: 0;
 }
 button {
   cursor: pointer;
@@ -41,7 +44,8 @@ button {
 .shell {
   max-width: 1120px;
   margin: auto;
-  padding: 22px 18px 60px;
+  padding: 22px max(18px, env(safe-area-inset-right)) 60px
+    max(18px, env(safe-area-inset-left));
 }
 .top {
   display: flex;
@@ -54,6 +58,7 @@ button {
   display: flex;
   gap: 12px;
   align-items: center;
+  min-width: 0;
 }
 .logo {
   width: 52px;
@@ -97,6 +102,9 @@ h1 {
   grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 9px;
   margin-bottom: 16px;
+}
+.tools > * {
+  min-width: 0;
 }
 .search {
   position: relative;
@@ -157,6 +165,7 @@ button,
   box-shadow: 0 5px 18px rgba(42, 61, 53, 0.06);
   transition: 0.18s;
   position: relative;
+  min-width: 0;
 }
 .book.priority-high {
   border-color: #d9b66e;
@@ -196,8 +205,8 @@ button,
   top: 9px;
   left: 9px;
   z-index: 2;
-  width: 38px;
-  height: 38px;
+  width: 44px;
+  height: 44px;
   padding: 0;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.94);
@@ -312,7 +321,7 @@ button,
 .fab {
   position: fixed;
   left: 24px;
-  bottom: 96px;
+  bottom: calc(96px + env(safe-area-inset-bottom));
   width: 58px;
   height: 58px;
   border: 0;
@@ -331,6 +340,7 @@ button,
   background: rgba(255, 253, 248, 0.97);
   border-top: 1px solid var(--line);
   z-index: 9;
+  padding-bottom: env(safe-area-inset-bottom);
 }
 .navs {
   width: min(880px, 100%);
@@ -340,12 +350,15 @@ button,
 }
 .bottom {
   overflow-x: auto;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
 }
 .nav {
   background: transparent;
   color: var(--muted);
   padding: 10px 4px 8px;
   font-size: 12px;
+  min-height: 62px;
 }
 .nav span {
   display: block;
@@ -365,7 +378,9 @@ button,
   align-items: flex-end;
   justify-content: center;
   z-index: 20;
-  padding: 16px;
+  padding: max(16px, env(safe-area-inset-top))
+    max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom))
+    max(16px, env(safe-area-inset-left));
 }
 .overlay.open {
   display: flex;
@@ -374,6 +389,7 @@ button,
   background: var(--card);
   width: min(590px, 100%);
   max-height: 92vh;
+  max-height: calc(100dvh - 32px);
   overflow: auto;
   border-radius: 24px;
   padding: 22px;
@@ -388,8 +404,8 @@ button,
   margin: 0;
 }
 .close {
-  width: 36px;
-  height: 36px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   padding: 0;
   background: #eee9df;
@@ -481,7 +497,10 @@ button,
 }
 .toast {
   position: fixed;
-  top: 18px;
+  top: max(18px, env(safe-area-inset-top));
+  width: max-content;
+  max-width: calc(100% - 24px);
+  text-align: center;
   left: 50%;
   transform: translate(-50%, -120px);
   background: var(--ink);
@@ -497,7 +516,19 @@ button,
 }
 @media (max-width: 650px) {
   .shell {
-    padding: 15px 12px;
+    padding: 15px max(12px, env(safe-area-inset-right)) 15px
+      max(12px, env(safe-area-inset-left));
+  }
+  .top {
+    align-items: flex-start;
+  }
+  .brand > div:last-child {
+    min-width: 0;
+  }
+  .sub,
+  .title,
+  .author {
+    overflow-wrap: anywhere;
   }
   .logo {
     width: 45px;
@@ -507,7 +538,16 @@ button,
     font-size: 23px;
   }
   .tools {
-    grid-template-columns: 1fr auto;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .tools .search {
+    grid-column: 1 / -1;
+  }
+  .tools > button,
+  .tools > a,
+  .tools > select {
+    width: 100%;
+    white-space: normal !important;
   }
   .fieldGrid {
     grid-template-columns: 1fr;
@@ -531,14 +571,15 @@ button,
   }
   .fab {
     left: 15px;
-    bottom: 86px;
+    bottom: calc(86px + env(safe-area-inset-bottom));
   }
   .overlay {
-    padding: 0;
+    padding: env(safe-area-inset-top) 0 0;
   }
   .modal {
     border-radius: 24px 24px 0 0;
-    max-height: 94vh;
+    max-height: calc(100dvh - env(safe-area-inset-top));
+    padding-bottom: max(22px, env(safe-area-inset-bottom));
   }
   .list .book {
     grid-template-columns: 60px minmax(0, 1fr);
@@ -550,5 +591,16 @@ button,
   }
   .list .cover {
     height: 72px;
+  }
+}
+@media (max-width: 350px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+  .cover {
+    height: 240px;
+  }
+  .count {
+    padding-inline: 9px;
   }
 }
