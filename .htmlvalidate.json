@@ -1,0 +1,18 @@
+{
+  "extends": ["html-validate:recommended"],
+  "rules": {
+    "attr-case": "off",
+    "attr-quotes": "error",
+    "doctype-style": "off",
+    "element-permitted-content": "off",
+    "element-required-attributes": "off",
+    "input-missing-label": "off",
+    "no-implicit-button-type": "off",
+    "no-implicit-input-type": "off",
+    "no-inline-style": "off",
+    "no-raw-characters": "off",
+    "prefer-button": "off",
+    "tel-non-breaking": "off",
+    "void-style": "off"
+  }
+}
