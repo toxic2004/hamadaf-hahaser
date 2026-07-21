@@ -1,4 +1,14 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
+import {
+  assertEmailAccepted,
+  dealDedupeKey,
+  dealTotal,
+  isScheduleAuthorized,
+  jerusalemParts,
+  priceDrop,
+  priceDropDedupeKey,
+  scheduledKinds,
+} from "./core.mjs";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
@@ -16,23 +26,6 @@ function json(body: unknown, status = 200) {
     status,
     headers: { "content-type": "application/json; charset=utf-8" },
   });
-}
-
-function jerusalemParts(now = new Date()) {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Jerusalem",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(now);
-  const value = (type: string) =>
-    parts.find((part) => part.type === type)?.value || "";
-  return {
-    date: `${value("year")}-${value("month")}-${value("day")}`,
-    hour: Number(value("hour")),
-  };
 }
 
 async function settingsFor(userId: string) {
@@ -72,9 +65,9 @@ async function priceDropNotification(offer: Record<string, any>) {
     .order("captured_on", { ascending: false })
     .limit(2);
   if (!data || data.length < 2) return null;
-  const current = Number(data[0].total_price);
-  const previous = Number(data[1].total_price);
-  if (!(current < previous)) return null;
+  const drop = priceDrop(data[1].total_price, data[0].total_price);
+  if (!drop) return null;
+  const { current, previous } = drop;
   return insertNotification({
     user_id: offer.user_id,
     book_id: offer.book_id,
@@ -82,7 +75,7 @@ async function priceDropNotification(offer: Record<string, any>) {
     notification_type: "ירידת מחיר",
     title: "ירידת מחיר",
     body: `המחיר ירד מ ${previous.toFixed(2)} ₪ ל ${current.toFixed(2)} ₪ אצל ${offer.source}`,
-    dedupe_key: `${offer.id}:drop:${current}`,
+    dedupe_key: priceDropDedupeKey(offer.id, current),
     metadata: {
       previous_price: previous,
       total_price: current,
@@ -92,16 +85,8 @@ async function priceDropNotification(offer: Record<string, any>) {
 }
 
 async function dealNotification(offer: Record<string, any>, threshold: number) {
-  const total = offer.total_price === null ? null : Number(offer.total_price);
-  if (
-    offer.edition_language !== "עברית" ||
-    offer.match_type === "לא התאמה" ||
-    !offer.active ||
-    offer.is_removed ||
-    total === null ||
-    Number(offer.deal_score || 0) < threshold
-  )
-    return null;
+  const total = dealTotal(offer, threshold);
+  if (total === null) return null;
   return insertNotification({
     user_id: offer.user_id,
     book_id: offer.book_id,
@@ -109,7 +94,7 @@ async function dealNotification(offer: Record<string, any>, threshold: number) {
     notification_type: "עסקה משתלמת",
     title: "נמצאה עסקה משתלמת",
     body: `${offer.listing_title || "ספר"}: ${total.toFixed(2)} ₪ אצל ${offer.source}`,
-    dedupe_key: `${offer.id}:deal:${total}`,
+    dedupe_key: dealDedupeKey(offer.id, total),
     metadata: {
       total_price: total,
       score: offer.deal_score,
@@ -155,7 +140,7 @@ async function emailNotifications(
       html: `<div dir="rtl" style="font-family:Arial,sans-serif">${notifications.map((item) => `<h2>${escapeHtml(item.title)}</h2><p>${escapeHtml(item.body)}</p>`).join("")}</div>`,
     }),
   });
-  if (!response.ok) throw new Error(`Email failed with ${response.status}`);
+  assertEmailAccepted(response);
   await service
     .from("notifications")
     .update({ emailed_at: new Date().toISOString() })
@@ -316,8 +301,10 @@ async function processScheduledUser(
 
 async function processSchedule(request: Request) {
   if (
-    !SCHEDULE_SECRET ||
-    request.headers.get("x-schedule-secret") !== SCHEDULE_SECRET
+    !isScheduleAuthorized(
+      SCHEDULE_SECRET,
+      request.headers.get("x-schedule-secret"),
+    )
   )
     return json({ error: "unauthorized" }, 401);
   const local = jerusalemParts();
@@ -334,11 +321,7 @@ async function processSchedule(request: Request) {
   for (const userId of users) {
     try {
       const settings = await settingsFor(userId);
-      const morningHour = Number(settings.morning_report_hour ?? 7);
-      const eveningHour = Number(settings.evening_check_hour ?? 19);
-      const kinds: ("בוקר" | "ערב")[] = [];
-      if (local.hour === morningHour) kinds.push("בוקר");
-      if (local.hour === eveningHour) kinds.push("ערב");
+      const kinds = scheduledKinds(settings, local.hour) as ("בוקר" | "ערב")[];
       if (!kinds.length) {
         results.push({ userId, skipped: "outside configured user hours" });
         continue;
