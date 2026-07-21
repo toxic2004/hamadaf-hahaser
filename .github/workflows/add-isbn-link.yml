@@ -1,0 +1,39 @@
+name: Add ISBN link
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/add-isbn-link.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  add-link:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Insert ISBN link into main page
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('index.html')
+          text = p.read_text(encoding='utf-8')
+          if 'href="isbn.html"' in text:
+              print('ISBN link already exists')
+              raise SystemExit(0)
+          old = '<button id="exportExcel" class="ghost">⇩ ייצוא ל־Excel</button></section>'
+          new = '<button id="exportExcel" class="ghost">⇩ ייצוא ל־Excel</button><a href="isbn.html" class="primary" style="text-decoration:none;border-radius:13px;padding:12px 14px;text-align:center;white-space:nowrap">▦ סריקת ISBN</a></section>'
+          if old not in text:
+              raise SystemExit('Expected toolbar marker not found')
+          p.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+      - name: Commit change
+        run: |
+          if git diff --quiet; then exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          git commit -m "Add ISBN link to main page"
+          git push
