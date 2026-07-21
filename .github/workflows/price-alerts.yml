@@ -2,8 +2,8 @@ name: Price alerts schedule
 
 on:
   schedule:
-    # Runs in both possible UTC offsets. The function executes only at 07:00 or 19:00 in Jerusalem.
-    - cron: "0 4,5,16,17 * * *"
+    # Run hourly so each user's configured Jerusalem hours are respected.
+    - cron: "0 * * * *"
   workflow_dispatch:
 
 jobs:
