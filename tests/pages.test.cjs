@@ -19,6 +19,23 @@ test("all pages are Hebrew RTL, responsive, and have unique IDs", () => {
   }
 });
 
+test("mobile layout protects iPhone safe areas and narrow screens", () => {
+  const styles = fs.readFileSync(path.join(root, "styles.css"), "utf8");
+  const dashboard = fs.readFileSync(
+    path.join(root, "dashboard.css"),
+    "utf8",
+  );
+  const isbn = fs.readFileSync(path.join(root, "isbn.html"), "utf8");
+
+  for (const source of [styles, dashboard, isbn]) {
+    assert.match(source, /safe-area-inset-bottom/);
+    assert.match(source, /100dvh/);
+  }
+  assert.match(styles, /\.tools \.search\s*{[^}]*grid-column:\s*1 \/ -1/s);
+  assert.match(styles, /@media \(max-width: 350px\)/);
+  assert.match(dashboard, /overflow-x:\s*hidden/);
+});
+
 test("all local navigation and asset targets exist", () => {
   for (const page of pages) {
     const dom = new JSDOM(fs.readFileSync(path.join(root, page), "utf8"));
