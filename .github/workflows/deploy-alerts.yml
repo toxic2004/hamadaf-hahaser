@@ -1,13 +1,10 @@
 name: Deploy alerts function
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "supabase/functions/alerts/**"
-      - "supabase/config.toml"
-      - ".github/workflows/deploy-alerts.yml"
   workflow_dispatch:
+
+# Deployments are performed through the connected Supabase project. Keep this
+# workflow as an explicit fallback for repositories with deployment secrets.
 
 permissions:
   contents: read
