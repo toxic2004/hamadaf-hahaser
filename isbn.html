@@ -1,42 +1,439 @@
 <!doctype html>
 <html lang="he" dir="rtl">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#285f50">
-<title>הוספת ספר חכמה | המדף החסר</title>
-<style>
-:root{--ink:#17352d;--muted:#6d7f79;--paper:#f5f1e8;--card:#fffdf8;--green:#285f50;--green2:#dcebe4;--danger:#a94a45;--line:#e4ded2;--shadow:0 12px 35px rgba(33,58,48,.11)}*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font-family:Arial,sans-serif;min-height:100vh}.shell{max-width:700px;margin:auto;padding:18px 14px 50px}.top{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px}.brand{display:flex;align-items:center;gap:12px;min-width:0}.logo{width:48px;height:48px;border-radius:15px;background:var(--green);color:white;display:grid;place-items:center;font-size:25px;flex:0 0 auto}.card{background:var(--card);border:1px solid var(--line);border-radius:22px;padding:20px;box-shadow:var(--shadow)}h1,h2{margin:0}.sub{color:var(--muted);font-size:14px;line-height:1.5}.field{margin:14px 0}.field label{display:block;font-weight:700;font-size:13px;margin-bottom:6px}.field input,.field textarea{width:100%;border:1px solid var(--line);border-radius:13px;padding:13px;background:white;font:inherit}.field textarea{min-height:90px;resize:vertical}.row{display:grid;grid-template-columns:1fr auto;gap:8px}button,a.button{border:0;border-radius:13px;padding:12px 14px;font:inherit;cursor:pointer;text-decoration:none;text-align:center}.primary{background:var(--green);color:white;font-weight:700}.ghost{background:white;color:var(--ink);border:1px solid var(--line)}.back{white-space:nowrap;flex:0 0 auto}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}.actions>*{flex:1;min-width:130px}.message{margin:12px 0;padding:11px;border-radius:12px;background:var(--green2);display:none}.message.error{background:#fbe7e5;color:var(--danger)}.preview{display:grid;grid-template-columns:110px 1fr;gap:14px;align-items:start;margin-top:14px}.preview img{width:110px;height:155px;object-fit:contain;background:#eee;border-radius:12px}.head{display:flex;justify-content:space-between;align-items:center}.auth{margin-bottom:14px}.hidden{display:none!important}@media(max-width:520px){.preview{grid-template-columns:85px 1fr}.preview img{width:85px;height:125px}.row{grid-template-columns:1fr}.shell{padding:12px}.card{padding:16px}.top{align-items:flex-start}.back{padding:10px 11px;font-size:13px}.brand h1{font-size:21px}}
-</style>
-</head>
-<body>
-<main class="shell">
-<header class="top"><div class="brand"><div class="logo">▥</div><div><h1>הוספת ספר חכמה</h1><div class="sub">איתור לפי ISBN או לפי צילום כריכה</div></div></div><a class="button ghost back" href="./" aria-label="חזרה לעמוד הראשי">← חזרה למדף</a></header>
-<section id="authCard" class="card auth"><h2>כניסה לחשבון</h2><p class="sub">השתמש באותו אימייל וסיסמה של המדף החסר.</p><div class="field"><label>אימייל</label><input id="email" type="email" autocomplete="email"></div><div class="field"><label>סיסמה</label><input id="password" type="password" autocomplete="current-password"></div><div class="actions"><button id="login" class="primary">כניסה</button><a class="button ghost" href="./">חזרה למדף</a></div></section>
-<section id="appCard" class="card hidden"><div class="head"><div><h2>איתור לפי ISBN</h2><div id="account" class="sub"></div></div><button id="logout" class="ghost">יציאה</button></div><p class="sub">הזן את המספר המודפס ליד הברקוד. הסריקה החיה הוסרה עד שתהיה יציבה.</p><div class="field"><label>ISBN-10 או ISBN-13</label><input id="isbn" inputmode="numeric" autocomplete="off" placeholder="לדוגמה 9781234567897"></div><div class="actions"><button id="lookup" class="primary">איתור פרטי הספר</button><button id="clear" class="ghost">ניקוי</button></div><div id="message" class="message" aria-live="polite"></div><div id="form" class="hidden"><div class="preview"><img id="cover" alt="כריכת הספר"><div><div class="field"><label>שם הספר</label><input id="title"></div><div class="field"><label>שם המחבר</label><input id="author"></div></div></div><div class="field"><label>הערות</label><textarea id="notes"></textarea></div><div class="actions"><button id="save" class="primary">שמירה במדף החסר</button><a class="button ghost" href="./">פתיחת המדף</a></div></div></section>
-</main>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script>
-'use strict';
-const SUPABASE_URL='https://mfxhmnzyfhlaiqctchvb.supabase.co';
-const SUPABASE_KEY='sb_publishable_joNTfIdJZ1t34wsl1S_d3g_aWmhHdaB';
-const db=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
-const ISBN_MARKER=/\n?\[ISBN:([0-9X-]+)\]\s*$/i;
-let user=null,coverUrl='';
-const $=id=>document.getElementById(id);
-function clean(value){return String(value||'').toUpperCase().replace(/[^0-9X]/g,'');}
-function valid10(value){const isbn=clean(value);if(!/^\d{9}[\dX]$/.test(isbn))return false;return [...isbn].reduce((sum,char,index)=>sum+(char==='X'?10:Number(char))*(10-index),0)%11===0;}
-function valid13(value){const isbn=clean(value);if(!/^\d{13}$/.test(isbn))return false;const sum=[...isbn.slice(0,12)].reduce((total,char,index)=>total+Number(char)*(index%2?3:1),0);return (10-sum%10)%10===Number(isbn[12]);}
-function valid(value){const isbn=clean(value);return isbn.length===10?valid10(isbn):valid13(isbn);}
-function msg(text,error=false){$('message').textContent=text;$('message').className='message'+(error?' error':'');$('message').style.display=text?'block':'none';}
-function reset(){$('isbn').value='';$('title').value='';$('author').value='';$('notes').value='';$('cover').removeAttribute('src');coverUrl='';$('form').classList.add('hidden');msg('');}
-async function lookupBook(){const code=clean($('isbn').value);$('isbn').value=code;if(!valid(code))return msg('מספר ה ISBN אינו תקין.',true);msg('בודק אם הספר כבר נמצא ברשימה...');const {data,error}=await db.from('books').select('id,title,notes,status');if(error)return msg('לא ניתן לבדוק את הרשימה כרגע.',true);const duplicate=(data||[]).find(book=>{const match=String(book.notes||'').match(ISBN_MARKER);return match&&clean(match[1])===code&&book.status!=='סל מחזור';});if(duplicate)return msg('הספר כבר קיים ברשימה: '+duplicate.title,true);msg('מחפש את פרטי הספר...');try{const response=await fetch('https://www.googleapis.com/books/v1/volumes?q=isbn:'+encodeURIComponent(code));if(!response.ok)throw new Error('HTTP '+response.status);const payload=await response.json(),item=payload.items&&payload.items[0];if(!item)return msg('לא נמצאו פרטים לספר. אפשר להזין את הפרטים ידנית.',true);const info=item.volumeInfo||{};$('title').value=(info.title||'')+(info.subtitle?': '+info.subtitle:'');$('author').value=Array.isArray(info.authors)?info.authors.join(', '):'';coverUrl=info.imageLinks&&(info.imageLinks.thumbnail||info.imageLinks.smallThumbnail)||'';if(coverUrl)$('cover').src=coverUrl.replace(/^http:/,'https:');else $('cover').removeAttribute('src');$('form').classList.remove('hidden');msg('הפרטים נמצאו. בדוק אותם לפני השמירה.');}catch(error){console.error(error);$('form').classList.remove('hidden');msg('החיפוש נכשל. אפשר להזין את הפרטים ידנית.',true);}}
-async function saveBook(){const code=clean($('isbn').value),title=$('title').value.trim();if(!valid(code))return msg('מספר ה ISBN אינו תקין.',true);if(!title)return msg('צריך להזין שם ספר.',true);if(!user)return msg('צריך להתחבר מחדש.',true);$('save').disabled=true;$('save').textContent='שומר...';const visibleNotes=$('notes').value.trim(),storedNotes=(visibleNotes?visibleNotes+'\n':'')+'[ISBN:'+code+']',now=new Date().toISOString();const row={id:crypto.randomUUID(),user_id:user.id,title,author:$('author').value.trim(),cover:coverUrl.replace(/^http:/,'https:'),notes:storedNotes,status:'מחפש',created_at:now,updated_at:now};const {error}=await db.from('books').insert(row);$('save').disabled=false;$('save').textContent='שמירה במדף החסר';if(error)return msg('השמירה נכשלה: '+(error.message||'שגיאה לא ידועה'),true);msg('הספר נשמר וסונכרן במדף החסר.');reset();}
-function showSession(session){user=session&&session.user||null;$('authCard').classList.toggle('hidden',!!user);$('appCard').classList.toggle('hidden',!user);if(user)$('account').textContent='מחובר כ '+user.email;}
-$('login').onclick=async()=>{const email=$('email').value.trim(),password=$('password').value;if(!email||!password)return alert('צריך להזין אימייל וסיסמה');$('login').disabled=true;const {data,error}=await db.auth.signInWithPassword({email,password});$('login').disabled=false;if(error)return alert('הכניסה נכשלה. בדוק את האימייל והסיסמה.');showSession(data.session);};
-$('logout').onclick=()=>db.auth.signOut();$('lookup').onclick=lookupBook;$('save').onclick=saveBook;$('clear').onclick=reset;
-db.auth.getSession().then(({data})=>showSession(data.session));db.auth.onAuthStateChange((event,session)=>showSession(session));
-</script>
-<script src="cover-recognition.js"></script>
-</body>
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width,initial-scale=1,viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#285f50" />
+    <title>הוספת ספר חכמה | המדף החסר</title>
+    <style>
+      :root {
+        --ink: #17352d;
+        --muted: #6d7f79;
+        --paper: #f5f1e8;
+        --card: #fffdf8;
+        --green: #285f50;
+        --green2: #dcebe4;
+        --danger: #a94a45;
+        --line: #e4ded2;
+        --shadow: 0 12px 35px rgba(33, 58, 48, 0.11);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--paper);
+        color: var(--ink);
+        font-family: Arial, sans-serif;
+        min-height: 100vh;
+      }
+      .shell {
+        max-width: 700px;
+        margin: auto;
+        padding: 18px 14px 50px;
+      }
+      .top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 16px;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        min-width: 0;
+      }
+      .logo {
+        width: 48px;
+        height: 48px;
+        border-radius: 15px;
+        background: var(--green);
+        color: white;
+        display: grid;
+        place-items: center;
+        font-size: 25px;
+        flex: 0 0 auto;
+      }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 22px;
+        padding: 20px;
+        box-shadow: var(--shadow);
+      }
+      h1,
+      h2 {
+        margin: 0;
+      }
+      .sub {
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.5;
+      }
+      .field {
+        margin: 14px 0;
+      }
+      .field label {
+        display: block;
+        font-weight: 700;
+        font-size: 13px;
+        margin-bottom: 6px;
+      }
+      .field input,
+      .field textarea {
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 13px;
+        padding: 13px;
+        background: white;
+        font: inherit;
+      }
+      .field textarea {
+        min-height: 90px;
+        resize: vertical;
+      }
+      .row {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 8px;
+      }
+      button,
+      a.button {
+        border: 0;
+        border-radius: 13px;
+        padding: 12px 14px;
+        font: inherit;
+        cursor: pointer;
+        text-decoration: none;
+        text-align: center;
+      }
+      .primary {
+        background: var(--green);
+        color: white;
+        font-weight: 700;
+      }
+      .ghost {
+        background: white;
+        color: var(--ink);
+        border: 1px solid var(--line);
+      }
+      .back {
+        white-space: nowrap;
+        flex: 0 0 auto;
+      }
+      .actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-top: 16px;
+      }
+      .actions > * {
+        flex: 1;
+        min-width: 130px;
+      }
+      .message {
+        margin: 12px 0;
+        padding: 11px;
+        border-radius: 12px;
+        background: var(--green2);
+        display: none;
+      }
+      .message.error {
+        background: #fbe7e5;
+        color: var(--danger);
+      }
+      .preview {
+        display: grid;
+        grid-template-columns: 110px 1fr;
+        gap: 14px;
+        align-items: start;
+        margin-top: 14px;
+      }
+      .preview img {
+        width: 110px;
+        height: 155px;
+        object-fit: contain;
+        background: #eee;
+        border-radius: 12px;
+      }
+      .head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .auth {
+        margin-bottom: 14px;
+      }
+      .hidden {
+        display: none !important;
+      }
+      @media (max-width: 520px) {
+        .preview {
+          grid-template-columns: 85px 1fr;
+        }
+        .preview img {
+          width: 85px;
+          height: 125px;
+        }
+        .row {
+          grid-template-columns: 1fr;
+        }
+        .shell {
+          padding: 12px;
+        }
+        .card {
+          padding: 16px;
+        }
+        .top {
+          align-items: flex-start;
+        }
+        .back {
+          padding: 10px 11px;
+          font-size: 13px;
+        }
+        .brand h1 {
+          font-size: 21px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <header class="top">
+        <div class="brand">
+          <div class="logo">▥</div>
+          <div>
+            <h1>הוספת ספר חכמה</h1>
+            <div class="sub">איתור לפי ISBN או לפי צילום כריכה</div>
+          </div>
+        </div>
+        <a class="button ghost back" href="./" aria-label="חזרה לעמוד הראשי"
+          >← חזרה למדף</a
+        >
+      </header>
+      <section id="authCard" class="card auth">
+        <h2>כניסה לחשבון</h2>
+        <p class="sub">השתמש באותו אימייל וסיסמה של המדף החסר.</p>
+        <div class="field">
+          <label>אימייל</label
+          ><input id="email" type="email" autocomplete="email" />
+        </div>
+        <div class="field">
+          <label>סיסמה</label
+          ><input
+            id="password"
+            type="password"
+            autocomplete="current-password"
+          />
+        </div>
+        <div class="actions">
+          <button id="login" class="primary">כניסה</button
+          ><a class="button ghost" href="./">חזרה למדף</a>
+        </div>
+      </section>
+      <section id="appCard" class="card hidden">
+        <div class="head">
+          <div>
+            <h2>איתור לפי ISBN</h2>
+            <div id="account" class="sub"></div>
+          </div>
+          <button id="logout" class="ghost">יציאה</button>
+        </div>
+        <p class="sub">
+          הזן את המספר המודפס ליד הברקוד. הסריקה החיה הוסרה עד שתהיה יציבה.
+        </p>
+        <div class="field">
+          <label>ISBN-10 או ISBN-13</label
+          ><input
+            id="isbn"
+            inputmode="numeric"
+            autocomplete="off"
+            placeholder="לדוגמה 9781234567897"
+          />
+        </div>
+        <div class="actions">
+          <button id="lookup" class="primary">איתור פרטי הספר</button
+          ><button id="clear" class="ghost">ניקוי</button>
+        </div>
+        <div id="message" class="message" aria-live="polite"></div>
+        <div id="form" class="hidden">
+          <div class="preview">
+            <img id="cover" alt="כריכת הספר" />
+            <div>
+              <div class="field">
+                <label>שם הספר</label><input id="title" />
+              </div>
+              <div class="field">
+                <label>שם המחבר</label><input id="author" />
+              </div>
+            </div>
+          </div>
+          <div class="field">
+            <label>הערות</label><textarea id="notes"></textarea>
+          </div>
+          <div class="actions">
+            <button id="save" class="primary">שמירה במדף החסר</button
+            ><a class="button ghost" href="./">פתיחת המדף</a>
+          </div>
+        </div>
+      </section>
+    </main>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="./supabase-client.js"></script>
+    <script src="./isbn-core.js"></script>
+    <script>
+      "use strict";
+      const db = HamadafSupabase.createClient();
+      const ISBN_MARKER = /\n?\[ISBN:([0-9X-]+)\]\s*$/i;
+      let user = null,
+        coverUrl = "";
+      const $ = (id) => document.getElementById(id);
+      function clean(value) {
+        return HamadafIsbn.clean(value);
+      }
+      function valid10(value) {
+        return HamadafIsbn.isValidIsbn10(value);
+      }
+      function valid13(value) {
+        return HamadafIsbn.isValidIsbn13(value);
+      }
+      function valid(value) {
+        return HamadafIsbn.isValidIsbn(value);
+      }
+      function msg(text, error = false) {
+        $("message").textContent = text;
+        $("message").className = "message" + (error ? " error" : "");
+        $("message").style.display = text ? "block" : "none";
+      }
+      function reset() {
+        $("isbn").value = "";
+        $("title").value = "";
+        $("author").value = "";
+        $("notes").value = "";
+        $("cover").removeAttribute("src");
+        coverUrl = "";
+        $("form").classList.add("hidden");
+        msg("");
+      }
+      async function lookupBook() {
+        const code = clean($("isbn").value);
+        $("isbn").value = code;
+        if (!valid(code)) return msg("מספר ה ISBN אינו תקין.", true);
+        msg("בודק אם הספר כבר נמצא ברשימה...");
+        const { data, error } = await db
+          .from("books")
+          .select("id,title,notes,status,isbn");
+        if (error) return msg("לא ניתן לבדוק את הרשימה כרגע.", true);
+        const duplicate = (data || []).find((book) => {
+          if (clean(book.isbn) === code && book.status !== "סל מחזור")
+            return true;
+          const match = String(book.notes || "").match(ISBN_MARKER);
+          return (
+            match && clean(match[1]) === code && book.status !== "סל מחזור"
+          );
+        });
+        if (duplicate)
+          return msg("הספר כבר קיים ברשימה: " + duplicate.title, true);
+        msg("מחפש את פרטי הספר...");
+        try {
+          const response = await fetch(
+            "https://www.googleapis.com/books/v1/volumes?q=isbn:" +
+              encodeURIComponent(code),
+          );
+          if (!response.ok) throw new Error("HTTP " + response.status);
+          const payload = await response.json(),
+            item = payload.items && payload.items[0];
+          if (!item)
+            return msg(
+              "לא נמצאו פרטים לספר. אפשר להזין את הפרטים ידנית.",
+              true,
+            );
+          const info = item.volumeInfo || {};
+          $("title").value =
+            (info.title || "") + (info.subtitle ? ": " + info.subtitle : "");
+          $("author").value = Array.isArray(info.authors)
+            ? info.authors.join(", ")
+            : "";
+          coverUrl =
+            (info.imageLinks &&
+              (info.imageLinks.thumbnail || info.imageLinks.smallThumbnail)) ||
+            "";
+          if (coverUrl) $("cover").src = coverUrl.replace(/^http:/, "https:");
+          else $("cover").removeAttribute("src");
+          $("form").classList.remove("hidden");
+          msg("הפרטים נמצאו. בדוק אותם לפני השמירה.");
+        } catch (error) {
+          console.error(error);
+          $("form").classList.remove("hidden");
+          msg("החיפוש נכשל. אפשר להזין את הפרטים ידנית.", true);
+        }
+      }
+      async function saveBook() {
+        const code = clean($("isbn").value),
+          title = $("title").value.trim();
+        if (!valid(code)) return msg("מספר ה ISBN אינו תקין.", true);
+        if (!title) return msg("צריך להזין שם ספר.", true);
+        if (!user) return msg("צריך להתחבר מחדש.", true);
+        $("save").disabled = true;
+        $("save").textContent = "שומר...";
+        const visibleNotes = $("notes").value.trim(),
+          storedNotes =
+            (visibleNotes ? visibleNotes + "\n" : "") + "[ISBN:" + code + "]",
+          now = new Date().toISOString();
+        const row = {
+          id: crypto.randomUUID(),
+          user_id: user.id,
+          title,
+          author: $("author").value.trim(),
+          cover: coverUrl.replace(/^http:/, "https:"),
+          notes: storedNotes,
+          isbn: code,
+          status: "מחפש",
+          created_at: now,
+          updated_at: now,
+        };
+        const { error } = await db.from("books").insert(row);
+        $("save").disabled = false;
+        $("save").textContent = "שמירה במדף החסר";
+        if (error)
+          return msg(
+            "השמירה נכשלה: " + (error.message || "שגיאה לא ידועה"),
+            true,
+          );
+        msg("הספר נשמר וסונכרן במדף החסר.");
+        reset();
+      }
+      function showSession(session) {
+        user = (session && session.user) || null;
+        $("authCard").classList.toggle("hidden", !!user);
+        $("appCard").classList.toggle("hidden", !user);
+        if (user) $("account").textContent = "מחובר כ " + user.email;
+      }
+      $("login").onclick = async () => {
+        const email = $("email").value.trim(),
+          password = $("password").value;
+        if (!email || !password) return alert("צריך להזין אימייל וסיסמה");
+        $("login").disabled = true;
+        const { data, error } = await db.auth.signInWithPassword({
+          email,
+          password,
+        });
+        $("login").disabled = false;
+        if (error) return alert("הכניסה נכשלה. בדוק את האימייל והסיסמה.");
+        showSession(data.session);
+      };
+      $("logout").onclick = () => db.auth.signOut();
+      $("lookup").onclick = lookupBook;
+      $("save").onclick = saveBook;
+      $("clear").onclick = reset;
+      db.auth.getSession().then(({ data }) => showSession(data.session));
+      db.auth.onAuthStateChange((event, session) => showSession(session));
+    </script>
+    <script src="cover-recognition.js"></script>
+  </body>
 </html>

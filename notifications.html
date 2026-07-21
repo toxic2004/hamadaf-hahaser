@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width,initial-scale=1,viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#285f50" />
+    <title>התראות | המדף החסר</title>
+    <link rel="stylesheet" href="./dashboard.css" />
+    <link rel="stylesheet" href="./price-styles.css" />
+  </head>
+  <body>
+    <section id="authCard" class="authCard">
+      <h2>כניסה להתראות</h2>
+      <div class="field">
+        <label for="email">אימייל</label><input id="email" type="email" />
+      </div>
+      <div class="field">
+        <label for="password">סיסמה</label
+        ><input id="password" type="password" />
+      </div>
+      <button id="login" class="primary">כניסה</button>
+      <p id="authMessage" class="sub"></p>
+    </section>
+    <main id="app" class="shell hidden">
+      <header class="top">
+        <div>
+          <h1>התראות</h1>
+          <p class="sub">עסקאות משתלמות, ירידות מחיר ודוח בוקר</p>
+        </div>
+        <nav class="sourceLinks">
+          <a href="prices.html">השוואת מחירים</a><a href="./">חזרה למדף</a>
+        </nav>
+      </header>
+      <div class="notice">
+        התראות בתוך המערכת פעילות לאחר הפעלת מיגרציית המחירים. בדיקות מתוזמנות
+        ומייל יפעלו רק לאחר פריסת פונקציית Supabase והגדרת הסודות המתועדים
+        במאגר. אין חיבור ל ChatGPT.
+      </div>
+      <div id="error" class="error hidden"></div>
+      <div class="panels">
+        <article class="panel">
+          <h2>הגדרות</h2>
+          <div class="field">
+            <label for="threshold">סף עסקה משתלמת</label
+            ><input
+              id="threshold"
+              type="number"
+              min="0"
+              max="100"
+              step="1"
+              value="70"
+            />
+          </div>
+          <label class="check"
+            ><input id="emailEnabled" type="checkbox" /> שליחת מייל לאחר חיבור
+            שירות המייל</label
+          >
+          <div class="field">
+            <label for="notificationEmail">כתובת לקבלת מייל</label
+            ><input id="notificationEmail" type="email" />
+          </div>
+          <p class="sub">
+            הבדיקות מתוכננות לשעות 07:00 ו 19:00 לפי Asia/Jerusalem. דוח הבוקר
+            נוצר פעם אחת ביום.
+          </p>
+          <button id="saveSettings" class="primary">שמירת הגדרות</button>
+          <p id="settingsMessage" class="sub"></p>
+        </article>
+        <article class="panel">
+          <div class="head">
+            <h2>התראות במערכת</h2>
+            <button id="markAllRead" class="ghost">סימון הכול כנקרא</button>
+          </div>
+          <p id="notificationCount" class="sub"></p>
+          <div id="notificationList"></div>
+        </article>
+      </div>
+    </main>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="./supabase-client.js"></script>
+    <script src="./notifications.js"></script>
+  </body>
+</html>

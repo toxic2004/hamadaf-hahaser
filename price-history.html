@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width,initial-scale=1,viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#285f50" />
+    <title>היסטוריית מחירים | המדף החסר</title>
+    <link rel="stylesheet" href="./dashboard.css" />
+    <link rel="stylesheet" href="./price-styles.css" />
+  </head>
+  <body>
+    <section id="authCard" class="authCard">
+      <h2>כניסה להיסטוריית מחירים</h2>
+      <div class="field">
+        <label for="email">אימייל</label><input id="email" type="email" />
+      </div>
+      <div class="field">
+        <label for="password">סיסמה</label
+        ><input id="password" type="password" />
+      </div>
+      <button id="login" class="primary">כניסה</button>
+      <p id="authMessage" class="sub"></p>
+    </section>
+    <main id="app" class="shell hidden">
+      <header class="top">
+        <div>
+          <h1>היסטוריית מחירים</h1>
+          <p class="sub">המחיר הזול בכל יום, עד שנה בתצוגה</p>
+        </div>
+        <nav class="sourceLinks">
+          <a href="prices.html">השוואת מחירים</a><a href="./">חזרה למדף</a>
+        </nav>
+      </header>
+      <div class="field">
+        <label for="bookSelect">ספר</label
+        ><select id="bookSelect"></select>
+      </div>
+      <div id="loading" class="notice">טוען נתונים...</div>
+      <div id="error" class="error hidden"></div>
+      <section id="content" class="hidden">
+        <div id="metrics" class="metrics"></div>
+        <div class="panels">
+          <article class="panel">
+            <h2>מחיר כולל לאורך זמן</h2>
+            <div class="chartWrap"><canvas id="historyChart"></canvas></div>
+          </article>
+          <article class="panel">
+            <h2>מודעות שהוסרו</h2>
+            <div id="removedOffers"></div>
+          </article>
+        </div>
+        <article class="panel" style="margin-top: 14px; overflow: auto">
+          <h2>רישומי מחיר יומיים</h2>
+          <table
+            id="historyTable"
+            style="width: 100%; border-collapse: collapse; margin-top: 12px"
+          ></table>
+        </article>
+      </section>
+    </main>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="./supabase-client.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+    <script src="./price-history.js"></script>
+  </body>
+</html>
