@@ -40,3 +40,18 @@ test("price data tables enforce per-user RLS and daily deduplication", () => {
   assert.match(sql, /unique \(user_id, dedupe_key\)/i);
   assert.match(sql, /grant execute on function public\.snapshot_daily_prices\(uuid\) to service_role/i);
 });
+
+test("price tables use the existing text book identifier", () => {
+  const sql = fs.readFileSync(
+    path.resolve(__dirname, "../supabase/005_prices_history_notifications.sql"),
+    "utf8",
+  );
+  const textReferences = sql.match(
+    /book_id text(?: not null)? references public\.books\(id\)/gi,
+  );
+  assert.equal(textReferences?.length, 4);
+  assert.doesNotMatch(
+    sql,
+    /book_id uuid(?: not null)? references public\.books\(id\)/i,
+  );
+});
