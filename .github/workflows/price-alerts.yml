@@ -1,10 +1,10 @@
 name: Price alerts schedule
 
 on:
-  schedule:
-    # Run hourly so each user's configured Jerusalem hours are respected.
-    - cron: "0 * * * *"
   workflow_dispatch:
+
+# Production scheduling runs inside Supabase with pg_cron. This workflow is
+# retained only as an explicit manual fallback and no longer sends hourly noise.
 
 jobs:
   invoke:
