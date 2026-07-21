@@ -23,7 +23,7 @@ module.exports = [
     },
   },
   {
-    files: ["scripts/**/*.mjs"],
+    files: ["**/*.mjs"],
     languageOptions: { sourceType: "module" },
   },
 ];
