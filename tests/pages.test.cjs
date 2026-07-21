@@ -55,6 +55,14 @@ test("critical UI flows are wired and ISBN has a back link", () => {
   const isbn = new JSDOM(fs.readFileSync(path.join(root, "isbn.html"), "utf8"))
     .window.document;
   assert.ok(isbn.querySelector('a[href="./"]'));
+  assert.ok(isbn.getElementById("scanIsbn"));
+  assert.ok(isbn.getElementById("isbnScanner"));
+  assert.ok(isbn.getElementById("isbnVideo"));
+  assert.ok(isbn.querySelector('script[src="isbn-scanner.js"]'));
+  const scanner = fs.readFileSync(path.join(root, "isbn-scanner.js"), "utf8");
+  assert.match(scanner, /decodeFromConstraints/);
+  assert.match(scanner, /facingMode/);
+  assert.match(scanner, /lookupBook/);
   const coverModule = fs.readFileSync(
     path.join(root, "cover-recognition.js"),
     "utf8",

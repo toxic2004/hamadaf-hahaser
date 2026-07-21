@@ -352,7 +352,7 @@ async function selectCover(src) {
   const b = state.books.find((x) => x.id === state.coverTarget);
   if (!b) return;
   b.cover = stored;
-  const { error } = await db
+  let { error } = await db
     .from("books")
     .update({ cover: stored, updated_at: new Date().toISOString() })
     .eq("id", b.id);
@@ -701,7 +701,7 @@ async function toggleFavorite(bookId) {
   const previous = Boolean(book.isFavorite);
   book.isFavorite = !previous;
   render();
-  const { error } = await db
+  let { error } = await db
     .from("books")
     .update({
       is_favorite: book.isFavorite,
