@@ -1,0 +1,25 @@
+name: Price alerts schedule
+
+on:
+  schedule:
+    # Runs in both possible UTC offsets. The function executes only at 07:00 or 19:00 in Jerusalem.
+    - cron: "0 4,5,16,17 * * *"
+  workflow_dispatch:
+
+jobs:
+  invoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Invoke Supabase alerts function
+        env:
+          ALERTS_URL: ${{ secrets.SUPABASE_ALERTS_URL }}
+          SCHEDULE_SECRET: ${{ secrets.SUPABASE_ALERTS_SCHEDULE_SECRET }}
+        run: |
+          test -n "$ALERTS_URL"
+          test -n "$SCHEDULE_SECRET"
+          curl --fail --silent --show-error \
+            --request POST \
+            --header "content-type: application/json" \
+            --header "x-schedule-secret: $SCHEDULE_SECRET" \
+            --data '{"mode":"schedule"}' \
+            "$ALERTS_URL"

@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width,initial-scale=1,viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#285f50" />
+    <title>השוואת מחירים | המדף החסר</title>
+    <link rel="stylesheet" href="./dashboard.css" />
+    <link rel="stylesheet" href="./price-styles.css" />
+  </head>
+  <body>
+    <section id="authCard" class="authCard">
+      <h2>כניסה להשוואת מחירים</h2>
+      <p class="sub">השתמש באותו חשבון של המדף החסר.</p>
+      <div class="field">
+        <label for="email">אימייל</label><input id="email" type="email" />
+      </div>
+      <div class="field">
+        <label for="password">סיסמה</label
+        ><input id="password" type="password" />
+      </div>
+      <button id="login" class="primary">כניסה</button>
+      <p id="authMessage" class="sub" aria-live="polite"></p>
+    </section>
+    <main id="app" class="shell hidden">
+      <header class="top">
+        <div>
+          <h1>השוואת מחירים</h1>
+          <p class="sub">הצעות חדשות ויד שנייה, עם מחיר משלוח נפרד</p>
+        </div>
+        <nav class="sourceLinks">
+          <a href="./">חזרה למדף</a>
+          <a href="price-history.html">היסטוריית מחירים</a>
+          <a href="notifications.html">התראות</a>
+        </nav>
+      </header>
+      <div id="loading" class="notice">טוען נתונים...</div>
+      <div id="error" class="error hidden" role="alert"></div>
+      <section id="content" class="hidden">
+        <article class="panel">
+          <div class="field">
+            <label for="bookSelect">ספר</label
+            ><select id="bookSelect"></select>
+          </div>
+          <p class="sub">
+            האתרים נפתחים לחיפוש חוקי ורגיל. אין עקיפת התחברות, CAPTCHA או הגנות
+            אתר. את פרטי ההצעה משלימים בטופס.
+          </p>
+          <div id="sourceLinks" class="sourceLinks"></div>
+        </article>
+        <article class="panel">
+          <div class="head">
+            <h2 id="formTitle">הוספת הצעה</h2>
+            <button id="resetForm" class="ghost">ניקוי</button>
+          </div>
+          <input id="editOfferId" type="hidden" />
+          <div class="formGrid">
+            <div class="field">
+              <label for="source">מקור</label
+              ><select id="source"></select>
+            </div>
+            <div class="field">
+              <label for="condition">מצב</label
+              ><select id="condition">
+                <option>יד שנייה</option>
+                <option>חדש</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="matchType">התאמה</label
+              ><select id="matchType">
+                <option>מדויקת</option>
+                <option>דומה</option>
+                <option>לא התאמה</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="itemPrice">מחיר הספר</label
+              ><input id="itemPrice" type="number" min="0" step="0.01" />
+            </div>
+            <div class="field">
+              <label for="shippingPrice">מחיר משלוח</label
+              ><input
+                id="shippingPrice"
+                type="number"
+                min="0"
+                step="0.01"
+                disabled
+              />
+            </div>
+            <label class="check"
+              ><input id="shippingKnown" type="checkbox" /> מחיר המשלוח
+              ידוע</label
+            >
+            <div class="field">
+              <label for="referencePrice">מחיר חדש להשוואה</label
+              ><input id="referencePrice" type="number" min="0" step="0.01" />
+            </div>
+            <div class="field">
+              <label for="location">אזור</label
+              ><select id="location">
+                <option>גוש דן</option>
+                <option>המרכז</option>
+                <option>מודיעין</option>
+                <option>ירושלים</option>
+                <option>משלוח</option>
+                <option>אחר</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="seller">שם המוכר</label><input id="seller" />
+            </div>
+            <div class="field wide">
+              <label for="listingTitle">כותרת המודעה</label
+              ><input id="listingTitle" />
+            </div>
+            <div class="field wide">
+              <label for="sourceUrl">קישור למודעה</label
+              ><input id="sourceUrl" type="url" inputmode="url" />
+            </div>
+            <div class="field wide">
+              <label for="adImageUrl"
+                >קישור לתמונת המודעה, רק אם מותר לשמור אותה</label
+              ><input id="adImageUrl" type="url" inputmode="url" />
+            </div>
+          </div>
+          <div id="scorePreview" class="scoreBox"></div>
+          <p class="sub">
+            נוסחת הדירוג: עד 60 נקודות לפי אחוז החיסכון, 10 למחיר כולל ידוע, 15
+            להתאמה מדויקת או 7 לדומה, 10 למהדורה בעברית, 5 לבדיקה ביומיים
+            האחרונים. ציון 70 ומעלה נחשב משתלם.
+          </p>
+          <button id="saveOffer" class="primary">שמירת הצעה</button>
+          <p id="formMessage" class="sub" aria-live="polite"></p>
+        </article>
+        <section>
+          <h2 class="tabsTitle">חדש</h2>
+          <div id="newOffers" class="offerGrid"></div>
+          <h2 class="tabsTitle">יד שנייה</h2>
+          <div id="usedOffers" class="offerGrid"></div>
+        </section>
+      </section>
+    </main>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="./supabase-client.js"></script>
+    <script src="./price-utils.js"></script>
+    <script src="./prices.js"></script>
+  </body>
+</html>
