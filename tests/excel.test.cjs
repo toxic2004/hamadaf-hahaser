@@ -45,6 +45,31 @@ test("creates a real Hebrew XLSX workbook with required sheets and tables", asyn
     reopened.getWorksheet("כל הספרים").getCell("A2").value,
     "הספר הראשון",
   );
+});
+
+test("keeps Hebrew text and each book status in the correct worksheet", async () => {
+  const books = [
+    { title: "ספר בדיונים", status: "בדיונים", created: Date.now() },
+    {
+      title: "ספר שמחכה לתשובה",
+      status: "מחכה לתשובה",
+      created: Date.now(),
+    },
+    { title: "ספר בסל", status: "סל מחזור", created: Date.now() },
+  ];
+  const workbook = await excel.buildWorkbook(books, ExcelJS);
+  const negotiations = workbook.getWorksheet("משא ומתן");
+  const trash = workbook.getWorksheet("סל מחזור");
+  assert.equal(negotiations.views[0].rightToLeft, true);
+  assert.equal(trash.views[0].rightToLeft, true);
+  assert.deepEqual(
+    [negotiations.getCell("A2").value, negotiations.getCell("A3").value],
+    ["ספר בדיונים", "ספר שמחכה לתשובה"],
+  );
+  assert.equal(trash.getCell("A2").value, "ספר בסל");
+});
+
+test("uses an Israel local timestamp in the exported filename", () => {
   assert.match(
     excel.fileName(new Date("2026-07-21T05:07:00Z")),
     /2026-07-21 08-07\.xlsx$/,
