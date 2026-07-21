@@ -152,26 +152,43 @@ test("email delivery failures are surfaced for safe handling", async () => {
   );
 });
 
-test("alert workflow runs hourly to support configurable hours", () => {
+test("GitHub alert workflow is a manual fallback", () => {
   const workflow = fs.readFileSync(
     path.join(root, ".github/workflows/price-alerts.yml"),
     "utf8",
   );
 
-  assert.match(workflow, /cron: "0 \* \* \* \*"/);
+  assert.match(workflow, /workflow_dispatch:/);
+  assert.doesNotMatch(workflow, /schedule:/);
 });
 
-test("alerts deployment workflow is automatic, scoped, and serialized", () => {
+test("alerts deployment workflow is manual and serialized", () => {
   const workflow = fs.readFileSync(
     path.join(root, ".github/workflows/deploy-alerts.yml"),
     "utf8",
   );
 
-  assert.match(workflow, /branches: \[main\]/);
-  assert.match(workflow, /supabase\/functions\/alerts\/\*\*/);
   assert.match(workflow, /workflow_dispatch:/);
+  assert.doesNotMatch(workflow, /push:/);
   assert.match(workflow, /group: deploy-supabase-alerts/);
   assert.match(workflow, /cancel-in-progress: false/);
+});
+
+test("Supabase schedules alerts hourly with a Vault secret", () => {
+  const migration = fs.readFileSync(
+    path.join(root, "supabase/006_alerts_schedule_security.sql"),
+    "utf8",
+  );
+  const source = fs.readFileSync(
+    path.join(root, "supabase/functions/alerts/index.ts"),
+    "utf8",
+  );
+
+  assert.match(migration, /'invoke-alerts-hourly'/);
+  assert.match(migration, /'0 \* \* \* \*'/);
+  assert.match(migration, /vault\.decrypted_secrets/);
+  assert.match(migration, /grant execute[\s\S]*to service_role/);
+  assert.match(source, /verify_alerts_schedule_secret/);
 });
 
 test("alerts deployment validates credentials and deploys without JWT verification", () => {
