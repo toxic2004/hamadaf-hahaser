@@ -160,3 +160,30 @@ test("alert workflow runs hourly to support configurable hours", () => {
 
   assert.match(workflow, /cron: "0 \* \* \* \*"/);
 });
+
+test("alerts deployment workflow is automatic, scoped, and serialized", () => {
+  const workflow = fs.readFileSync(
+    path.join(root, ".github/workflows/deploy-alerts.yml"),
+    "utf8",
+  );
+
+  assert.match(workflow, /branches: \[main\]/);
+  assert.match(workflow, /supabase\/functions\/alerts\/\*\*/);
+  assert.match(workflow, /workflow_dispatch:/);
+  assert.match(workflow, /group: deploy-supabase-alerts/);
+  assert.match(workflow, /cancel-in-progress: false/);
+});
+
+test("alerts deployment validates credentials and deploys without JWT verification", () => {
+  const workflow = fs.readFileSync(
+    path.join(root, ".github/workflows/deploy-alerts.yml"),
+    "utf8",
+  );
+
+  assert.match(workflow, /secrets\.SUPABASE_ACCESS_TOKEN/);
+  assert.match(workflow, /secrets\.SUPABASE_PROJECT_REF/);
+  assert.match(workflow, /supabase\/setup-cli@v1/);
+  assert.match(workflow, /supabase functions deploy alerts/);
+  assert.match(workflow, /--project-ref "\$SUPABASE_PROJECT_REF"/);
+  assert.match(workflow, /--no-verify-jwt/);
+});

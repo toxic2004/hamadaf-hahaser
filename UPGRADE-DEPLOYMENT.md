@@ -36,15 +36,23 @@
 
 ההתראות המיידיות בתוך המערכת נוצרות בעת שמירת הצעה משתלמת או ירידת מחיר. כדי להפעיל גם בדיקות לפי השעות שנשמרו לכל משתמש באזור הזמן `Asia/Jerusalem`, דוח בוקר ומייל אופציונלי:
 
-1. התחבר לפרויקט דרך Supabase CLI.
-2. הגדר סוד אקראי בשם `ALERTS_SCHEDULE_SECRET`.
-3. פרוס את הפונקציה:
+1. צור ב Supabase אסימון גישה אישי. שמור אותו ישירות ב GitHub ואל תכניס אותו לקוד או לצ'אט.
+2. הוסף ב GitHub תחת `Settings`, אחר כך `Secrets and variables`, אחר כך `Actions`, את שני הסודות הבאים:
+
+- `SUPABASE_ACCESS_TOKEN`, אסימון הגישה האישי מ Supabase
+- `SUPABASE_PROJECT_REF`, מזהה הפרויקט שמופיע בכתובת הפרויקט ב Supabase
+
+3. פתח ב GitHub את `Actions`, בחר `Deploy alerts function` ולחץ `Run workflow`.
+4. לאחר ההפעלה הידנית הראשונה, כל שינוי עתידי בפונקציית `alerts` שייכנס לענף `main` ייפרס אוטומטית. התהליך מונע שתי פריסות מקבילות ומפסיק עם הודעה ברורה אם אחד הסודות חסר.
+5. הגדר ב Supabase סוד אקראי בשם `ALERTS_SCHEDULE_SECRET`.
+
+לפריסה מקומית חלופית בלבד אפשר להריץ:
 
 ```bash
-supabase functions deploy alerts
+supabase functions deploy alerts --project-ref PROJECT_REF --no-verify-jwt
 ```
 
-4. הוסף ל GitHub Actions את הסודות:
+6. הוסף ל GitHub Actions את הסודות הדרושים להפעלה השעתית:
 
 - `SUPABASE_ALERTS_URL`, כתובת ה endpoint של פונקציית `alerts`
 - `SUPABASE_ALERTS_SCHEDULE_SECRET`, אותו ערך שהוגדר בפונקציה
