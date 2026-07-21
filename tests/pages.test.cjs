@@ -80,10 +80,16 @@ test("dashboard controls have concrete handlers", () => {
   for (const [file, ids] of Object.entries(expectations)) {
     const source = fs.readFileSync(path.join(root, file), "utf8");
     for (const id of ids) {
-      assert.match(source, new RegExp(`\\$\\(["']${id}["']\\)`), `${file}: ${id}`);
+      assert.match(
+        source,
+        new RegExp(`\\$\\(["']${id}["']\\)`),
+        `${file}: ${id}`,
+      );
     }
   }
   const isbn = fs.readFileSync(path.join(root, "isbn.html"), "utf8");
   for (const id of ["login", "logout", "lookup", "save", "clear"])
     assert.match(isbn, new RegExp(`\\$\\(["']${id}["']\\)\\.onclick`));
+  assert.match(isbn, /select\("id,title,notes,status"\)/);
+  assert.match(isbn, /delete row\.isbn/);
 });

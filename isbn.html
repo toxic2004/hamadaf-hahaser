@@ -325,9 +325,20 @@
         $("isbn").value = code;
         if (!valid(code)) return msg("מספר ה ISBN אינו תקין.", true);
         msg("בודק אם הספר כבר נמצא ברשימה...");
-        const { data, error } = await db
+        let { data, error } = await db
           .from("books")
           .select("id,title,notes,status,isbn");
+        if (
+          error &&
+          (["PGRST204", "42703"].includes(error.code) ||
+            /column .* does not exist|schema cache/i.test(error.message || ""))
+        ) {
+          const fallback = await db
+            .from("books")
+            .select("id,title,notes,status");
+          data = fallback.data;
+          error = fallback.error;
+        }
         if (error) return msg("לא ניתן לבדוק את הרשימה כרגע.", true);
         const duplicate = (data || []).find((book) => {
           if (clean(book.isbn) === code && book.status !== "סל מחזור")
@@ -397,7 +408,18 @@
           created_at: now,
           updated_at: now,
         };
-        const { error } = await db.from("books").insert(row);
+        let { error } = await db.from("books").insert(row);
+        let legacyMode = false;
+        if (
+          error &&
+          (["PGRST204", "42703"].includes(error.code) ||
+            /column .* does not exist|schema cache/i.test(error.message || ""))
+        ) {
+          delete row.isbn;
+          const fallback = await db.from("books").insert(row);
+          error = fallback.error;
+          legacyMode = !error;
+        }
         $("save").disabled = false;
         $("save").textContent = "שמירה במדף החסר";
         if (error)
@@ -405,7 +427,11 @@
             "השמירה נכשלה: " + (error.message || "שגיאה לא ידועה"),
             true,
           );
-        msg("הספר נשמר וסונכרן במדף החסר.");
+        msg(
+          legacyMode
+            ? "הספר נשמר. ה ISBN נשמר בתאימות לאחור עד להפעלת המיגרציה."
+            : "הספר נשמר וסונכרן במדף החסר.",
+        );
         reset();
       }
       function showSession(session) {

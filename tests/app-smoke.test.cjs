@@ -41,6 +41,10 @@ test("main workflow loads, edits, favorites, acquires and trashes without consol
       updated_at: "2026-07-01T00:00:00Z",
     },
   ];
+  const missingUpgrade = {
+    code: "PGRST204",
+    message: "column is missing from the schema cache",
+  };
 
   class Query {
     constructor() {
@@ -54,6 +58,8 @@ test("main workflow loads, edits, favorites, acquires and trashes without consol
     }
     upsert(row) {
       const rows = Array.isArray(row) ? row : [row];
+      if (rows.some((item) => Object.hasOwn(item, "priority")))
+        return Promise.resolve({ error: missingUpgrade });
       for (const item of rows) {
         const index = remoteBooks.findIndex((book) => book.id === item.id);
         if (index >= 0) remoteBooks[index] = { ...remoteBooks[index], ...item };
@@ -67,6 +73,8 @@ test("main workflow loads, edits, favorites, acquires and trashes without consol
     }
     eq(column, value) {
       if (this.patch) {
+        if (Object.hasOwn(this.patch, "acquired_at"))
+          return Promise.resolve({ error: missingUpgrade });
         const book = remoteBooks.find((item) => item[column] === value);
         if (book) Object.assign(book, this.patch);
       }
@@ -134,7 +142,11 @@ test("main workflow loads, edits, favorites, acquires and trashes without consol
   window.document.querySelector('[data-move="השגתי"]').click();
   await wait();
   assert.equal(remoteBooks[0].status, "השגתי");
-  assert.ok(remoteBooks[0].acquired_at);
+  assert.equal(remoteBooks[0].acquired_at, null);
+  assert.match(
+    window.document.getElementById("toast").textContent,
+    /המיגרציות/,
+  );
 
   window.document.querySelector('[data-status="השגתי"]').click();
   window.document.querySelector(".book").click();
