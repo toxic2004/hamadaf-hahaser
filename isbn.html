@@ -330,13 +330,7 @@
           </div>
           <button id="closeScanner" class="ghost" type="button">סגירה</button>
         </div>
-        <video
-          id="isbnVideo"
-          class="scannerVideo"
-          playsinline
-          muted
-          aria-label="תצוגת מצלמה לסריקת ISBN"
-        ></video>
+        <video id="isbnVideo" class="scannerVideo" playsinline muted></video>
         <p id="scannerMessage" class="sub" aria-live="polite">
           המצלמה תיפתח לאחר מתן הרשאה.
         </p>
@@ -427,10 +421,7 @@
             coverUrl = "";
             $("cover").removeAttribute("src");
             $("form").classList.remove("hidden");
-            msg(
-              "לא נמצאו פרטים לספר. אפשר להזין את הפרטים ידנית.",
-              true,
-            );
+            msg("לא נמצאו פרטים לספר. אפשר להזין את הפרטים ידנית.", true);
             return;
           }
           const info = item.volumeInfo || {};
