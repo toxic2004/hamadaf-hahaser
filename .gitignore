@@ -1,3 +1,22 @@
 node_modules/
 dist/
 *.log
+
+# Local environment and authentication files
+.env
+.env.*
+!.env.example
+.npmrc
+*.key
+*.pem
+
+# Tool caches and temporary output
+.cache/
+.npm/
+.supabase/
+.tmp/
+tmp/
+temp/
+*.tmp
+coverage/
+.DS_Store
