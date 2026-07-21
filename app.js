@@ -565,13 +565,13 @@ function showPreview(src) {
 async function saveBook() {
   const title = bookTitle.value.trim();
   if (!title) return toast("צריך להזין שם ספר");
+  const current = state.books.find((book) => book.id === id.value);
+  const titleChanged =
+    !current || normalize(current.title) !== normalize(title);
   const duplicate = state.books.find(
-    (b) =>
-      normalize(b.title) === normalize(title) &&
-      b.id !== id.value &&
-      b.status !== "סל מחזור",
+    (b) => normalize(b.title) === normalize(title) && b.id !== id.value,
   );
-  if (duplicate) return toast("הספר כבר קיים ברשימה");
+  if (titleChanged && duplicate) return toast("הספר כבר קיים ברשימה");
   if (!state.user) return toast("צריך להתחבר קודם");
   save.disabled = true;
   save.textContent = "שומר...";
@@ -717,6 +717,15 @@ async function toggleFavorite(bookId) {
   toast(book.isFavorite ? "הספר נוסף למועדפים" : "הספר הוסר מהמועדפים");
 }
 async function moveBook(status) {
+  if (state.selected.status === "סל מחזור" && status !== "סל מחזור") {
+    const duplicate = state.books.find(
+      (book) =>
+        book.id !== state.selected.id &&
+        book.status !== "סל מחזור" &&
+        normalize(book.title) === normalize(state.selected.title),
+    );
+    if (duplicate) return toast("אי אפשר לשחזר: הספר כבר קיים ברשימה הפעילה");
+  }
   const msg =
     status === "השגתי"
       ? "האם להעביר את הספר לספרים שהשגתי?"
