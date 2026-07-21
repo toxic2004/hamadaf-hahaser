@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width,initial-scale=1,viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#285f50" />
+    <title>סטטיסטיקות | המדף החסר</title>
+    <link rel="stylesheet" href="./dashboard.css" />
+  </head>
+  <body>
+    <section id="authCard" class="authCard">
+      <h2>כניסה לסטטיסטיקות</h2>
+      <p class="sub">השתמש באותו חשבון של המדף החסר.</p>
+      <div class="field">
+        <label for="email">אימייל</label><input id="email" type="email" />
+      </div>
+      <div class="field">
+        <label for="password">סיסמה</label
+        ><input id="password" type="password" />
+      </div>
+      <button id="login" class="primary">כניסה</button>
+      <p id="authMessage" class="sub" aria-live="polite"></p>
+    </section>
+    <main id="app" class="shell hidden">
+      <header class="top">
+        <div>
+          <h1>סטטיסטיקות</h1>
+          <p class="sub">נתונים אמיתיים מתוך המדף שלך</p>
+        </div>
+        <a class="button ghost noPrint" href="./">חזרה למדף</a>
+      </header>
+      <div class="toolbar noPrint">
+        <label
+          >תקופה
+          <select id="period">
+            <option value="month">החודש</option>
+            <option value="year">השנה</option>
+            <option value="all" selected>כל התקופה</option>
+          </select>
+        </label>
+        <button id="print" class="ghost">הדפסה</button>
+      </div>
+      <div id="loading" class="notice">טוען נתונים...</div>
+      <div id="error" class="error hidden" role="alert"></div>
+      <section id="content" class="hidden">
+        <div id="metrics" class="metrics"></div>
+        <div class="panels">
+          <article class="panel">
+            <h2>מצבי הספרים</h2>
+            <div class="chartWrap"><canvas id="statusChart"></canvas></div>
+          </article>
+          <article class="panel">
+            <h2>פעילות חודשית</h2>
+            <div class="chartWrap"><canvas id="activityChart"></canvas></div>
+          </article>
+          <article class="panel">
+            <h2>שלמות הנתונים</h2>
+            <p id="missingSummary" class="sub"></p>
+            <ul id="missingList" class="missingList"></ul>
+          </article>
+          <article class="panel">
+            <h2>הערות אמינות</h2>
+            <div id="qualityNotes" class="sub"></div>
+          </article>
+        </div>
+      </section>
+    </main>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="./supabase-client.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+    <script src="./statistics-core.js"></script>
+    <script src="./statistics.js"></script>
+  </body>
+</html>

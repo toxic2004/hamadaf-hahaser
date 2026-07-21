@@ -39,9 +39,13 @@
         </div>
         <select id="sort" class="select">
           <option value="recent">נוספו לאחרונה</option>
+          <option value="priority">עדיפות</option>
           <option value="az">סדר האלף בית</option></select
         ><button id="view" class="ghost view">☷ רשימה</button
         ><button id="exportExcel" class="ghost">⇩ ייצוא ל־Excel</button
+        ><a class="ghost toolLink" href="statistics.html">סטטיסטיקות</a
+        ><a class="ghost toolLink" href="prices.html">השוואת מחירים</a
+        ><a class="ghost toolLink" href="notifications.html">התראות</a
         ><a
           href="isbn.html"
           class="primary"
@@ -61,7 +65,11 @@
     <nav class="bottom">
       <div class="navs">
         <button class="nav active" data-status="מחפש"><span>⌕</span>מחפש</button
-        ><button class="nav" data-status="בדיונים"><span>◌</span>בדיונים</button
+        ><button class="nav" data-status="בדיונים">
+          <span>◌</span>משא ומתן</button
+        ><button class="nav" data-status="מחכה לתשובה">
+          <span>◷</span>מחכה</button
+        ><button class="nav" data-status="מועדפים"><span>★</span>מועדפים</button
         ><button class="nav" data-status="השגתי"><span>✓</span>השגתי</button
         ><button class="nav" data-status="סל מחזור">
           <span>♲</span>סל מחזור
@@ -95,6 +103,32 @@
         </div>
         <div class="field">
           <label>הערות</label><textarea id="notes"></textarea>
+        </div>
+        <div class="field">
+          <label for="priority">רמת עדיפות</label>
+          <select id="priority">
+            <option value="רגילה">רגילה</option>
+            <option value="גבוהה">גבוהה</option>
+            <option value="דחופה">דחופה</option>
+          </select>
+        </div>
+        <div class="choiceRow">
+          <label><input id="isFavorite" type="checkbox" /> מועדף</label>
+          <label><input id="isRequired" type="checkbox" /> ספר חובה</label>
+        </div>
+        <div class="fieldGrid">
+          <div class="field">
+            <label for="purchasePrice">מחיר ששולם בפועל</label>
+            <input id="purchasePrice" type="number" min="0" step="0.01" />
+          </div>
+          <div class="field">
+            <label for="newPrice">מחיר חדש להשוואה</label>
+            <input id="newPrice" type="number" min="0" step="0.01" />
+          </div>
+        </div>
+        <div class="field">
+          <label for="acquiredAt">תאריך השגה</label>
+          <input id="acquiredAt" type="date" />
         </div>
         <div class="actions">
           <button id="save" class="primary">שמירה</button
@@ -156,7 +190,9 @@
       src="https://cse.google.com/cse.js?cx=c50b071c83d564187"
     ></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="./supabase-client.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+    <script src="./excel-export.js"></script>
     <script src="./app.js"></script>
   </body>
 </html>

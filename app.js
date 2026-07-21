@@ -65,9 +65,7 @@ const INITIAL = [
   "לא נשוב אחור",
 ];
 const KEY = "hamadaf-hahaser-v1";
-const SUPABASE_URL = "https://mfxhmnzyfhlaiqctchvb.supabase.co";
-const SUPABASE_KEY = "sb_publishable_joNTfIdJZ1t34wsl1S_d3g_aWmhHdaB";
-const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const db = HamadafSupabase.createClient();
 const state = {
   books: [],
   status: "מחפש",
@@ -76,9 +74,12 @@ const state = {
   user: null,
   coverTarget: null,
 };
+const PRIORITY_ORDER = { דחופה: 3, גבוהה: 2, רגילה: 1 };
 const subtitles = {
   מחפש: "הספרים שאני מחפש",
   בדיונים: "ספרים שנמצאים בדיונים או במשא ומתן",
+  "מחכה לתשובה": "ספרים שמחכים לתשובת המוכר",
+  מועדפים: "הספרים שסימנתי כמועדפים",
   השגתי: "ספרים שכבר השגתי",
   "סל מחזור": "ספרים שהוסרו מהרשימה",
 };
@@ -94,6 +95,9 @@ async function init() {
         notes: "",
         status: "מחפש",
         created: Date.now() - i,
+        priority: "רגילה",
+        isFavorite: false,
+        isRequired: false,
       }));
   bind();
   render();
@@ -154,68 +158,20 @@ function unlockScroll() {
 }
 async function exportToExcel() {
   if (!state.books.length) return toast("אין ספרים לייצוא");
-  if (typeof XLSX === "undefined")
+  if (!window.HamadafExcel || typeof ExcelJS === "undefined")
     return toast("רכיב הייצוא עדיין לא נטען. נסה שוב בעוד רגע");
-  const headers = [
-    "שם הספר",
-    "שם המחבר",
-    "מצב",
-    "הערות",
-    "תאריך הוספה",
-    "קיימת כריכה",
-  ];
-  const rows = [
-    headers,
-    ...[...state.books]
-      .sort((a, b) => b.created - a.created)
-      .map((b) => [
-        b.title,
-        b.author,
-        b.status,
-        b.notes,
-        new Date(b.created).toLocaleDateString("he-IL"),
-        b.cover ? "כן" : "לא",
-      ]),
-  ];
-  const sheet = XLSX.utils.aoa_to_sheet(rows);
-  sheet["!cols"] = [
-    { wch: 34 },
-    { wch: 28 },
-    { wch: 14 },
-    { wch: 42 },
-    { wch: 16 },
-    { wch: 14 },
-  ];
-  sheet["!autofilter"] = { ref: "A1:F" + rows.length };
-  const book = XLSX.utils.book_new();
-  book.Workbook = { Views: [{ RTL: true }] };
-  XLSX.utils.book_append_sheet(book, sheet, "הספרים שלי");
-  const bytes = XLSX.write(book, { bookType: "xlsx", type: "array" });
-  const name = "המדף החסר " + new Date().toISOString().slice(0, 10) + ".xlsx";
-  const file = new File([bytes], name, {
-    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  });
-  if (
-    /iPhone|iPad|iPod/.test(navigator.userAgent) &&
-    navigator.canShare &&
-    navigator.canShare({ files: [file] })
-  ) {
-    try {
-      await navigator.share({ files: [file], title: "המדף החסר" });
-      return;
-    } catch (e) {
-      if (e.name === "AbortError") return;
-    }
+  exportExcel.disabled = true;
+  exportExcel.textContent = "מכין קובץ...";
+  try {
+    await window.HamadafExcel.downloadWorkbook(state.books, ExcelJS);
+    toast("קובץ XLSX בעברית מוכן");
+  } catch (error) {
+    console.error("XLSX export failed", error);
+    toast("יצירת קובץ XLSX נכשלה");
+  } finally {
+    exportExcel.disabled = false;
+    exportExcel.textContent = "⇩ ייצוא ל Excel";
   }
-  const url = URL.createObjectURL(file),
-    a = document.createElement("a");
-  a.href = url;
-  a.download = name;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 2000);
-  toast("קובץ Excel בעברית ירד למכשיר");
 }
 async function login() {
   const email = authEmail.value.trim(),
@@ -264,9 +220,22 @@ function rowToBook(r) {
     title: r.title,
     author: r.author || "",
     cover: r.cover || "",
-    notes: r.notes || "",
+    notes: String(r.notes || "").replace(/\n?\[ISBN:[0-9X-]+\]\s*$/i, ""),
     status: r.status,
     created: new Date(r.created_at).getTime(),
+    isbn: r.isbn || "",
+    priority: PRIORITY_ORDER[r.priority] ? r.priority : "רגילה",
+    isFavorite: Boolean(r.is_favorite),
+    isRequired: Boolean(r.is_required),
+    acquiredAt: r.acquired_at ? new Date(r.acquired_at).getTime() : null,
+    purchasePrice:
+      r.purchase_price === null || r.purchase_price === undefined
+        ? null
+        : Number(r.purchase_price),
+    newPrice:
+      r.new_price === null || r.new_price === undefined
+        ? null
+        : Number(r.new_price),
   };
 }
 function bookToRow(b) {
@@ -278,6 +247,12 @@ function bookToRow(b) {
     cover: b.cover || "",
     notes: b.notes || "",
     status: b.status,
+    priority: PRIORITY_ORDER[b.priority] ? b.priority : "רגילה",
+    is_favorite: Boolean(b.isFavorite),
+    is_required: Boolean(b.isRequired),
+    acquired_at: b.acquiredAt ? new Date(b.acquiredAt).toISOString() : null,
+    purchase_price: numberOrNull(b.purchasePrice),
+    new_price: numberOrNull(b.newPrice),
     created_at: new Date(b.created).toISOString(),
     updated_at: new Date().toISOString(),
   };
@@ -303,30 +278,9 @@ async function loadRemote() {
   } else {
     state.books = data.map(rowToBook);
   }
-  await removeOpenLibraryData();
   persist();
   render();
   syncText.textContent = "מסונכרן לחשבון " + state.user.email;
-}
-async function removeOpenLibraryData() {
-  const affected = state.books.filter((b) =>
-    /^https:\/\/covers\.openlibrary\.org\//.test(b.cover || ""),
-  );
-  if (!affected.length) return;
-  syncText.textContent = "מסיר כריכות לא מתאימות...";
-  for (const b of affected) {
-    b.cover = "";
-    b.author = "";
-    await db
-      .from("books")
-      .update({
-        cover: "",
-        author: "",
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", b.id);
-  }
-  toast("הכריכות הלא מתאימות הוסרו");
 }
 function openGoogleImages(title, target = "form") {
   state.coverTarget = target;
@@ -411,15 +365,34 @@ function normalize(s) {
     .replace(/[\u0591-\u05c7]/g, "")
     .replace(/[^\u0590-\u05ffa-z0-9]/g, "");
 }
+function numberOrNull(value) {
+  if (value === "" || value === null || value === undefined) return null;
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : null;
+}
+function dateInputValue(timestamp) {
+  if (!timestamp) return "";
+  const date = new Date(timestamp);
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 10);
+}
 function render() {
   const q = normalize(search.value);
   let list = state.books.filter(
-    (b) => b.status === state.status && (!q || normalize(b.title).includes(q)),
+    (b) =>
+      (state.status === "מועדפים"
+        ? b.isFavorite && b.status !== "סל מחזור"
+        : b.status === state.status) &&
+      (!q || normalize(b.title).includes(q)),
   );
   list.sort(
     sort.value === "az"
       ? (a, b) => a.title.localeCompare(b.title, "he")
-      : (a, b) => b.created - a.created,
+      : sort.value === "priority"
+        ? (a, b) =>
+            (PRIORITY_ORDER[b.priority] || 1) -
+              (PRIORITY_ORDER[a.priority] || 1) || b.created - a.created
+        : (a, b) => b.created - a.created,
   );
   count.textContent = list.length + " ספרים";
   subtitle.textContent = subtitles[state.status];
@@ -437,6 +410,13 @@ function render() {
         openGoogleImages(btn.dataset.title, btn.dataset.id);
       }),
   );
+  books.querySelectorAll(".favoriteToggle").forEach(
+    (button) =>
+      (button.onclick = (event) => {
+        event.stopPropagation();
+        toggleFavorite(button.dataset.id);
+      }),
+  );
 }
 function card(b) {
   const cls =
@@ -450,15 +430,40 @@ function card(b) {
   const c = b.cover
     ? '<img src="' + esc(b.cover) + '">'
     : '<div class="fallback">' + esc(b.title) + "</div>";
+  const priorityClass =
+    b.priority === "דחופה"
+      ? " priority-urgent"
+      : b.priority === "גבוהה"
+        ? " priority-high"
+        : "";
+  const markerClass =
+    b.priority === "דחופה" ? "urgent" : b.priority === "גבוהה" ? "high" : "";
+  const markers =
+    '<div class="bookMarkers"><span class="priorityBadge ' +
+    markerClass +
+    '">עדיפות ' +
+    esc(b.priority || "רגילה") +
+    "</span>" +
+    (b.isRequired ? '<span class="requiredBadge">ספר חובה</span>' : "") +
+    "</div>";
   return (
-    '<article class="book" data-id="' +
+    '<article class="book' +
+    priorityClass +
+    '" data-id="' +
     b.id +
-    '"><div class="cover">' +
+    '"><button class="favoriteToggle' +
+    (b.isFavorite ? " active" : "") +
+    '" data-id="' +
+    b.id +
+    '" aria-label="' +
+    (b.isFavorite ? "הסרה מהמועדפים" : "הוספה למועדפים") +
+    '">★</button><div class="cover">' +
     c +
     '</div><div class="body"><div class="title">' +
     esc(b.title) +
     '</div><div class="author">' +
     esc(b.author || "שם הסופר טרם הוזן") +
+    markers +
     '</div><button class="ghost googleCover" data-id="' +
     b.id +
     '" data-title="' +
@@ -486,6 +491,12 @@ function openAdd() {
   );
   results.innerHTML = "";
   previewWrap.innerHTML = "";
+  priority.value = "רגילה";
+  isFavorite.checked = false;
+  isRequired.checked = false;
+  purchasePrice.value = "";
+  newPrice.value = "";
+  acquiredAt.value = "";
   modal.classList.add("open");
 }
 function findBook() {
@@ -544,6 +555,15 @@ async function saveBook() {
     notes: notes.value.trim(),
     status: state.selected ? state.selected.status : "מחפש",
     created: +created.value || Date.now(),
+    isbn: state.selected?.isbn || "",
+    priority: priority.value,
+    isFavorite: isFavorite.checked,
+    isRequired: isRequired.checked,
+    purchasePrice: numberOrNull(purchasePrice.value),
+    newPrice: numberOrNull(newPrice.value),
+    acquiredAt: acquiredAt.value
+      ? new Date(acquiredAt.value + "T12:00:00").getTime()
+      : state.selected?.acquiredAt || null,
   };
   const { error } = await db.from("books").upsert(bookToRow(book));
   save.disabled = false;
@@ -571,10 +591,13 @@ function openDetail(bookId) {
   let buttons = "";
   if (b.status === "מחפש")
     buttons =
-      '<button class="ghost" data-move="בדיונים">העבר לבדיונים</button><button class="primary" data-move="השגתי">השגתי</button>';
+      '<button class="ghost" data-move="בדיונים">העבר למשא ומתן</button><button class="ghost" data-move="מחכה לתשובה">מחכה לתשובה</button><button class="primary" data-move="השגתי">השגתי</button>';
   if (b.status === "בדיונים")
     buttons =
-      '<button class="ghost" data-move="מחפש">החזר למחפש</button><button class="primary" data-move="השגתי">השגתי</button>';
+      '<button class="ghost" data-move="מחפש">החזר למחפש</button><button class="ghost" data-move="מחכה לתשובה">מחכה לתשובה</button><button class="primary" data-move="השגתי">השגתי</button>';
+  if (b.status === "מחכה לתשובה")
+    buttons =
+      '<button class="ghost" data-move="מחפש">החזר למחפש</button><button class="ghost" data-move="בדיונים">העבר למשא ומתן</button><button class="primary" data-move="השגתי">השגתי</button>';
   if (b.status === "השגתי")
     buttons = '<button class="ghost" data-move="מחפש">החזר למחפש</button>';
   if (b.status === "סל מחזור")
@@ -588,12 +611,26 @@ function openDetail(bookId) {
     esc(b.title) +
     "</h2><p><strong>סופר:</strong> " +
     esc(b.author || "טרם הוזן") +
+    "</p><p><strong>עדיפות:</strong> " +
+    esc(b.priority || "רגילה") +
+    (b.isRequired ? " · ספר חובה" : "") +
+    (b.isFavorite ? " · מועדף" : "") +
+    "</p><p><strong>מחיר ששולם:</strong> " +
+    (b.purchasePrice === null ? "לא הוזן" : esc(b.purchasePrice) + " ₪") +
+    "</p><p><strong>מחיר חדש:</strong> " +
+    (b.newPrice === null ? "לא הוזן" : esc(b.newPrice) + " ₪") +
     "</p><p><strong>הערות:</strong> " +
     esc(b.notes || "אין הערות") +
-    '</p><div class="actions"><button id="edit" class="ghost">עריכה</button><button id="googleDetail" class="ghost">איתור כריכה</button>' +
+    '</p><div class="actions"><button id="edit" class="ghost">עריכה</button><button id="detailFavorite" class="ghost">' +
+    (b.isFavorite ? "הסרה מהמועדפים" : "הוספה למועדפים") +
+    '</button><button id="googleDetail" class="ghost">איתור כריכה</button>' +
     buttons +
     "</div>";
   edit.onclick = editBook;
+  detailFavorite.onclick = async () => {
+    await toggleFavorite(b.id);
+    openDetail(b.id);
+  };
   googleDetail.onclick = () => openGoogleImages(b.title, b.id);
   detail
     .querySelectorAll("[data-move]")
@@ -610,9 +647,36 @@ function editBook() {
   author.value = b.author;
   coverData.value = b.cover;
   notes.value = b.notes;
+  priority.value = b.priority || "רגילה";
+  isFavorite.checked = Boolean(b.isFavorite);
+  isRequired.checked = Boolean(b.isRequired);
+  purchasePrice.value = b.purchasePrice ?? "";
+  newPrice.value = b.newPrice ?? "";
+  acquiredAt.value = dateInputValue(b.acquiredAt);
   results.innerHTML = "";
   showPreview(b.cover);
   modal.classList.add("open");
+}
+async function toggleFavorite(bookId) {
+  const book = state.books.find((item) => item.id === bookId);
+  if (!book || !state.user) return toast("צריך להתחבר קודם");
+  const previous = Boolean(book.isFavorite);
+  book.isFavorite = !previous;
+  render();
+  const { error } = await db
+    .from("books")
+    .update({
+      is_favorite: book.isFavorite,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", book.id);
+  if (error) {
+    book.isFavorite = previous;
+    render();
+    return toast("עדכון המועדפים נכשל");
+  }
+  persist();
+  toast(book.isFavorite ? "הספר נוסף למועדפים" : "הספר הוסר מהמועדפים");
 }
 async function moveBook(status) {
   const msg =
@@ -623,13 +687,24 @@ async function moveBook(status) {
         : "האם להעביר את הספר?";
   if (!confirm(msg)) return;
   const old = state.selected.status;
+  const oldAcquiredAt = state.selected.acquiredAt;
   state.selected.status = status;
+  if (status === "השגתי" && !state.selected.acquiredAt) {
+    state.selected.acquiredAt = Date.now();
+  }
   const { error } = await db
     .from("books")
-    .update({ status, updated_at: new Date().toISOString() })
+    .update({
+      status,
+      acquired_at: state.selected.acquiredAt
+        ? new Date(state.selected.acquiredAt).toISOString()
+        : null,
+      updated_at: new Date().toISOString(),
+    })
     .eq("id", state.selected.id);
   if (error) {
     state.selected.status = old;
+    state.selected.acquiredAt = oldAcquiredAt;
     return toast("העברת הספר נכשלה");
   }
   persist();

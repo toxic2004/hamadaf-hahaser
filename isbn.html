@@ -284,45 +284,26 @@
       </section>
     </main>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="./supabase-client.js"></script>
+    <script src="./isbn-core.js"></script>
     <script>
       "use strict";
-      const SUPABASE_URL = "https://mfxhmnzyfhlaiqctchvb.supabase.co";
-      const SUPABASE_KEY = "sb_publishable_joNTfIdJZ1t34wsl1S_d3g_aWmhHdaB";
-      const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+      const db = HamadafSupabase.createClient();
       const ISBN_MARKER = /\n?\[ISBN:([0-9X-]+)\]\s*$/i;
       let user = null,
         coverUrl = "";
       const $ = (id) => document.getElementById(id);
       function clean(value) {
-        return String(value || "")
-          .toUpperCase()
-          .replace(/[^0-9X]/g, "");
+        return HamadafIsbn.clean(value);
       }
       function valid10(value) {
-        const isbn = clean(value);
-        if (!/^\d{9}[\dX]$/.test(isbn)) return false;
-        return (
-          [...isbn].reduce(
-            (sum, char, index) =>
-              sum + (char === "X" ? 10 : Number(char)) * (10 - index),
-            0,
-          ) %
-            11 ===
-          0
-        );
+        return HamadafIsbn.isValidIsbn10(value);
       }
       function valid13(value) {
-        const isbn = clean(value);
-        if (!/^\d{13}$/.test(isbn)) return false;
-        const sum = [...isbn.slice(0, 12)].reduce(
-          (total, char, index) => total + Number(char) * (index % 2 ? 3 : 1),
-          0,
-        );
-        return (10 - (sum % 10)) % 10 === Number(isbn[12]);
+        return HamadafIsbn.isValidIsbn13(value);
       }
       function valid(value) {
-        const isbn = clean(value);
-        return isbn.length === 10 ? valid10(isbn) : valid13(isbn);
+        return HamadafIsbn.isValidIsbn(value);
       }
       function msg(text, error = false) {
         $("message").textContent = text;
@@ -346,9 +327,11 @@
         msg("בודק אם הספר כבר נמצא ברשימה...");
         const { data, error } = await db
           .from("books")
-          .select("id,title,notes,status");
+          .select("id,title,notes,status,isbn");
         if (error) return msg("לא ניתן לבדוק את הרשימה כרגע.", true);
         const duplicate = (data || []).find((book) => {
+          if (clean(book.isbn) === code && book.status !== "סל מחזור")
+            return true;
           const match = String(book.notes || "").match(ISBN_MARKER);
           return (
             match && clean(match[1]) === code && book.status !== "סל מחזור"
@@ -409,6 +392,7 @@
           author: $("author").value.trim(),
           cover: coverUrl.replace(/^http:/, "https:"),
           notes: storedNotes,
+          isbn: code,
           status: "מחפש",
           created_at: now,
           updated_at: now,
