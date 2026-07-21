@@ -90,6 +90,57 @@ test("schedule access requires the configured secret", async () => {
   assert.equal(isScheduleAuthorized("secret", "wrong"), false);
   assert.equal(isScheduleAuthorized("secret", null), false);
   assert.equal(isScheduleAuthorized("", ""), false);
+  assert.equal(isScheduleAuthorized("secret", "secret-extra"), false);
+});
+
+test("offer identifiers must be valid UUIDs", async () => {
+  const { isUuid } = await core();
+  assert.equal(isUuid("9a9f20f2-3f70-4bc2-8dc3-d57ed27de941"), true);
+  assert.equal(isUuid("not-a-uuid"), false);
+  assert.equal(isUuid("' or true; --"), false);
+  assert.equal(isUuid(null), false);
+});
+
+test("only explicit supported request modes are accepted", async () => {
+  const { requestMode } = await core();
+  assert.equal(requestMode("offer"), "offer");
+  assert.equal(requestMode("schedule"), "schedule");
+  assert.equal(requestMode(undefined), null);
+  assert.equal(requestMode("admin"), null);
+});
+
+test("alert endpoint limits and validates incoming requests", () => {
+  const source = fs.readFileSync(
+    path.join(root, "supabase/functions/alerts/index.ts"),
+    "utf8",
+  );
+  assert.match(source, /MAX_BODY_BYTES = 16_384/);
+  assert.match(source, /content type must be application\/json/);
+  assert.match(source, /request body too large/);
+  assert.match(
+    source,
+    /authorization\.toLowerCase\(\)\.startsWith\("bearer "\)/,
+  );
+});
+
+test("email requests time out and database failures are not ignored", () => {
+  const source = fs.readFileSync(
+    path.join(root, "supabase/functions/alerts/index.ts"),
+    "utf8",
+  );
+  assert.match(source, /AbortSignal\.timeout\(10_000\)/);
+  assert.match(source, /if \(snapshot\.error\) throw snapshot\.error/);
+  assert.match(source, /if \(completed\.error\) throw completed\.error/);
+  assert.match(source, /if \(reschedule\.error\) throw reschedule\.error/);
+});
+
+test("JSON responses prevent caching and MIME sniffing", () => {
+  const source = fs.readFileSync(
+    path.join(root, "supabase/functions/alerts/index.ts"),
+    "utf8",
+  );
+  assert.match(source, /"cache-control": "no-store"/);
+  assert.match(source, /"x-content-type-options": "nosniff"/);
 });
 
 test("email delivery failures are surfaced for safe handling", async () => {

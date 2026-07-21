@@ -4,9 +4,11 @@ import {
   dealDedupeKey,
   dealTotal,
   isScheduleAuthorized,
+  isUuid,
   jerusalemParts,
   priceDrop,
   priceDropDedupeKey,
+  requestMode,
   scheduledKinds,
 } from "./core.mjs";
 
@@ -17,23 +19,59 @@ const SCHEDULE_SECRET = Deno.env.get("ALERTS_SCHEDULE_SECRET") || "";
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY") || "";
 const EMAIL_FROM =
   Deno.env.get("ALERTS_EMAIL_FROM") || "המדף החסר <onboarding@resend.dev>";
-const service = createClient(SUPABASE_URL, SERVICE_KEY, {
-  auth: { persistSession: false },
-});
+const MAX_BODY_BYTES = 16_384;
+let serviceClient: ReturnType<typeof createClient> | null = null;
+
+function service() {
+  if (!SUPABASE_URL || !SERVICE_KEY)
+    throw new Error("Missing required Supabase service configuration");
+  if (!serviceClient)
+    serviceClient = createClient(SUPABASE_URL, SERVICE_KEY, {
+      auth: { persistSession: false },
+    });
+  return serviceClient;
+}
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "content-type": "application/json; charset=utf-8" },
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store",
+      "x-content-type-options": "nosniff",
+    },
   });
 }
 
+async function readJson(request: Request) {
+  const contentType = request.headers.get("content-type") || "";
+  if (!contentType.toLowerCase().startsWith("application/json"))
+    return {
+      error: json({ error: "content type must be application/json" }, 415),
+    };
+  const declaredLength = Number(request.headers.get("content-length") || 0);
+  if (declaredLength > MAX_BODY_BYTES)
+    return { error: json({ error: "request body too large" }, 413) };
+  const text = await request.text();
+  if (new TextEncoder().encode(text).length > MAX_BODY_BYTES)
+    return { error: json({ error: "request body too large" }, 413) };
+  try {
+    const body = JSON.parse(text);
+    if (!body || typeof body !== "object" || Array.isArray(body))
+      return { error: json({ error: "invalid request body" }, 400) };
+    return { body: body as Record<string, unknown> };
+  } catch {
+    return { error: json({ error: "invalid JSON" }, 400) };
+  }
+}
+
 async function settingsFor(userId: string) {
-  const { data } = await service
+  const { data, error } = await service()
     .from("notification_settings")
     .select("*")
     .eq("user_id", userId)
     .maybeSingle();
+  if (error) throw error;
   return (
     data || {
       user_id: userId,
@@ -48,7 +86,7 @@ async function settingsFor(userId: string) {
 }
 
 async function insertNotification(row: Record<string, unknown>) {
-  const { data, error } = await service
+  const { data, error } = await service()
     .from("notifications")
     .upsert(row, { onConflict: "user_id,dedupe_key", ignoreDuplicates: true })
     .select("*");
@@ -57,13 +95,14 @@ async function insertNotification(row: Record<string, unknown>) {
 }
 
 async function priceDropNotification(offer: Record<string, any>) {
-  const { data } = await service
+  const { data, error } = await service()
     .from("price_history")
     .select("total_price,captured_on")
     .eq("offer_id", offer.id)
     .not("total_price", "is", null)
     .order("captured_on", { ascending: false })
     .limit(2);
+  if (error) throw error;
   if (!data || data.length < 2) return null;
   const drop = priceDrop(data[1].total_price, data[0].total_price);
   if (!drop) return null;
@@ -139,28 +178,34 @@ async function emailNotifications(
           : `המדף החסר: ${notifications.length} התראות`,
       html: `<div dir="rtl" style="font-family:Arial,sans-serif">${notifications.map((item) => `<h2>${escapeHtml(item.title)}</h2><p>${escapeHtml(item.body)}</p>`).join("")}</div>`,
     }),
+    signal: AbortSignal.timeout(10_000),
   });
   assertEmailAccepted(response);
-  await service
+  const notificationIds = notifications
+    .map((item) => item.id)
+    .filter((id) => isUuid(id));
+  if (!notificationIds.length) return;
+  const { error } = await service()
     .from("notifications")
     .update({ emailed_at: new Date().toISOString() })
-    .in(
-      "id",
-      notifications.map((item) => item.id),
-    );
+    .in("id", notificationIds);
+  if (error) throw error;
 }
 
 async function processOfferMode(request: Request, body: Record<string, any>) {
   const authorization = request.headers.get("authorization") || "";
-  if (!authorization || !body.offerId)
+  if (!authorization.toLowerCase().startsWith("bearer "))
     return json({ error: "unauthorized" }, 401);
+  if (!isUuid(body.offerId)) return json({ error: "invalid offer id" }, 400);
+  if (!SUPABASE_URL || !ANON_KEY)
+    throw new Error("Missing required Supabase authentication configuration");
   const userClient = createClient(SUPABASE_URL, ANON_KEY, {
     global: { headers: { authorization } },
     auth: { persistSession: false },
   });
   const { data: authData, error: authError } = await userClient.auth.getUser();
   if (authError || !authData.user) return json({ error: "unauthorized" }, 401);
-  const { data: offer, error } = await service
+  const { data: offer, error } = await service()
     .from("price_offers")
     .select("*")
     .eq("id", body.offerId)
@@ -190,7 +235,7 @@ async function processScheduledUser(
   localDate: string,
   kind: "בוקר" | "ערב",
 ) {
-  const run = await service
+  const run = await service()
     .from("price_scan_runs")
     .upsert(
       { user_id: userId, local_date: localDate, run_kind: kind },
@@ -200,7 +245,7 @@ async function processScheduledUser(
   if (run.error) throw run.error;
   let runId = run.data?.[0]?.id;
   if (!runId) {
-    const existing = await service
+    const existing = await service()
       .from("price_scan_runs")
       .select("id,completed_at")
       .eq("user_id", userId)
@@ -210,14 +255,18 @@ async function processScheduledUser(
     if (existing.error) throw existing.error;
     if (existing.data.completed_at) return { skipped: true, created: 0 };
     runId = existing.data.id;
-    await service
+    const restart = await service()
       .from("price_scan_runs")
       .update({ started_at: new Date().toISOString(), result: {} })
       .eq("id", runId);
+    if (restart.error) throw restart.error;
   }
-  await service.rpc("snapshot_daily_prices", { target_user: userId });
+  const snapshot = await service().rpc("snapshot_daily_prices", {
+    target_user: userId,
+  });
+  if (snapshot.error) throw snapshot.error;
   const settings = await settingsFor(userId);
-  const { data: offers, error } = await service
+  const { data: offers, error } = await service()
     .from("price_offers")
     .select("*")
     .eq("user_id", userId)
@@ -251,12 +300,13 @@ async function processScheduledUser(
       metadata: { source: offer.source },
     });
     if (reminder) created.push(reminder);
-    await service
+    const reschedule = await service()
       .from("price_offers")
       .update({
         next_check_at: new Date(now.getTime() + 2 * 86400000).toISOString(),
       })
       .eq("id", offer.id);
+    if (reschedule.error) throw reschedule.error;
   }
   if (kind === "בוקר") {
     const worthwhile = (offers || []).filter(
@@ -285,7 +335,7 @@ async function processScheduledUser(
     emailError = true;
     console.error(`Scheduled email delivery failed for ${userId}`, error);
   }
-  await service
+  const completed = await service()
     .from("price_scan_runs")
     .update({
       completed_at: new Date().toISOString(),
@@ -296,6 +346,7 @@ async function processScheduledUser(
       },
     })
     .eq("id", runId);
+  if (completed.error) throw completed.error;
   return { skipped: false, created: created.length, emailError };
 }
 
@@ -308,7 +359,7 @@ async function processSchedule(request: Request) {
   )
     return json({ error: "unauthorized" }, 401);
   const local = jerusalemParts();
-  const { data: rows, error } = await service.from("books").select("user_id");
+  const { data: rows, error } = await service().from("books").select("user_id");
   if (error) throw error;
   const users: string[] = [
     ...new Set<string>(
@@ -334,8 +385,8 @@ async function processSchedule(request: Request) {
         });
       }
     } catch (error) {
-      console.error(`Scheduled processing failed for ${userId}`, error);
-      results.push({ userId, error: "processing failed" });
+      console.error("Scheduled user processing failed", error);
+      results.push({ error: "processing failed" });
     }
   }
   return json({ ok: true, local, users: users.length, results });
@@ -345,11 +396,15 @@ Deno.serve(async (request) => {
   if (request.method !== "POST")
     return json({ error: "method not allowed" }, 405);
   try {
-    const body = await request.json().catch(() => ({}));
-    if (body.mode === "offer") return await processOfferMode(request, body);
+    const parsed = await readJson(request);
+    if (parsed.error) return parsed.error;
+    const body = parsed.body as Record<string, any>;
+    const mode = requestMode(body.mode);
+    if (!mode) return json({ error: "invalid mode" }, 400);
+    if (mode === "offer") return await processOfferMode(request, body);
     return await processSchedule(request);
   } catch (error) {
-    console.error(error);
+    console.error("Alerts request failed", error);
     return json({ error: "internal error" }, 500);
   }
 });

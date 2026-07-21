@@ -55,9 +55,30 @@ export function priceDropDedupeKey(offerId, current) {
 }
 
 export function isScheduleAuthorized(configuredSecret, providedSecret) {
-  return Boolean(configuredSecret) && providedSecret === configuredSecret;
+  if (!configuredSecret || !providedSecret) return false;
+  const expected = new TextEncoder().encode(configuredSecret);
+  const received = new TextEncoder().encode(providedSecret);
+  const length = Math.max(expected.length, received.length);
+  let difference = expected.length ^ received.length;
+  for (let index = 0; index < length; index += 1) {
+    difference |= (expected[index] || 0) ^ (received[index] || 0);
+  }
+  return difference === 0;
 }
 
 export function assertEmailAccepted(response) {
   if (!response.ok) throw new Error(`Email failed with ${response.status}`);
+}
+
+export function isUuid(value) {
+  return (
+    typeof value === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      value,
+    )
+  );
+}
+
+export function requestMode(value) {
+  return value === "offer" || value === "schedule" ? value : null;
 }
