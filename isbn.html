@@ -29,11 +29,16 @@
         color: var(--ink);
         font-family: Arial, sans-serif;
         min-height: 100vh;
+        min-height: 100dvh;
+        overflow-x: hidden;
       }
       .shell {
         max-width: 700px;
         margin: auto;
-        padding: 18px 14px 50px;
+        padding: max(18px, env(safe-area-inset-top))
+          max(14px, env(safe-area-inset-right))
+          max(50px, env(safe-area-inset-bottom))
+          max(14px, env(safe-area-inset-left));
       }
       .top {
         display: flex;
@@ -111,6 +116,8 @@
         cursor: pointer;
         text-decoration: none;
         text-align: center;
+        min-height: 44px;
+        min-width: 0;
       }
       .primary {
         background: var(--green);
@@ -187,6 +194,7 @@
       .scannerDialog {
         width: min(100%, 560px);
         max-height: calc(100vh - 36px);
+        max-height: calc(100dvh - 36px);
         overflow: auto;
         background: var(--card);
         border-radius: 22px;
@@ -215,7 +223,10 @@
           grid-template-columns: 1fr;
         }
         .shell {
-          padding: 12px;
+          padding: max(12px, env(safe-area-inset-top))
+            max(12px, env(safe-area-inset-right))
+            max(12px, env(safe-area-inset-bottom))
+            max(12px, env(safe-area-inset-left));
         }
         .card {
           padding: 16px;
@@ -229,6 +240,12 @@
         }
         .brand h1 {
           font-size: 21px;
+        }
+        .scanner {
+          padding: max(12px, env(safe-area-inset-top))
+            max(12px, env(safe-area-inset-right))
+            max(12px, env(safe-area-inset-bottom))
+            max(12px, env(safe-area-inset-left));
         }
       }
     </style>
