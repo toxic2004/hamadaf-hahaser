@@ -257,6 +257,27 @@ function bookToRow(b) {
     updated_at: new Date().toISOString(),
   };
 }
+function legacyBookRow(b) {
+  const row = bookToRow(b);
+  return {
+    id: row.id,
+    user_id: row.user_id,
+    title: row.title,
+    author: row.author,
+    cover: row.cover,
+    notes: row.notes,
+    status: row.status,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+function isMissingUpgrade(error) {
+  return Boolean(
+    error &&
+      (["PGRST204", "42703"].includes(error.code) ||
+        /column .* does not exist|schema cache/i.test(error.message || "")),
+  );
+}
 async function loadRemote() {
   syncText.textContent = "מסנכרן...";
   const { data, error } = await db
@@ -268,9 +289,16 @@ async function loadRemote() {
     return toast("לא ניתן לטעון את הספרים");
   }
   if (!data.length && state.books.length) {
-    const { error: migrateError } = await db
+    let { error: migrateError } = await db
       .from("books")
       .upsert(state.books.map(bookToRow));
+    if (isMissingUpgrade(migrateError)) {
+      const fallback = await db
+        .from("books")
+        .upsert(state.books.map(legacyBookRow));
+      migrateError = fallback.error;
+      if (!migrateError) toast("הספרים סונכרנו. יש להפעיל את מיגרציות השדרוג.");
+    }
     if (migrateError) {
       syncText.textContent = "שגיאת סנכרון";
       return toast("העברת הרשימה לענן נכשלה");
@@ -324,7 +352,7 @@ async function selectCover(src) {
   const b = state.books.find((x) => x.id === state.coverTarget);
   if (!b) return;
   b.cover = stored;
-  const { error } = await db
+  let { error } = await db
     .from("books")
     .update({ cover: stored, updated_at: new Date().toISOString() })
     .eq("id", b.id);
@@ -565,7 +593,13 @@ async function saveBook() {
       ? new Date(acquiredAt.value + "T12:00:00").getTime()
       : state.selected?.acquiredAt || null,
   };
-  const { error } = await db.from("books").upsert(bookToRow(book));
+  let { error } = await db.from("books").upsert(bookToRow(book));
+  let legacyMode = false;
+  if (isMissingUpgrade(error)) {
+    const fallback = await db.from("books").upsert(legacyBookRow(book));
+    error = fallback.error;
+    legacyMode = !error;
+  }
   save.disabled = false;
   save.textContent = "שמירה";
   if (error)
@@ -577,7 +611,11 @@ async function saveBook() {
   else state.books.unshift(book);
   persist();
   modal.classList.remove("open");
-  toast("הספר נשמר בלי שינוי אוטומטי");
+  toast(
+    legacyMode
+      ? "הספר נשמר. עדיפות ומחירים יסתנכרנו לאחר הפעלת המיגרציות."
+      : "הספר נשמר בלי שינוי אוטומטי",
+  );
   render();
 }
 function openDetail(bookId) {
@@ -663,7 +701,7 @@ async function toggleFavorite(bookId) {
   const previous = Boolean(book.isFavorite);
   book.isFavorite = !previous;
   render();
-  const { error } = await db
+  let { error } = await db
     .from("books")
     .update({
       is_favorite: book.isFavorite,
@@ -692,7 +730,7 @@ async function moveBook(status) {
   if (status === "השגתי" && !state.selected.acquiredAt) {
     state.selected.acquiredAt = Date.now();
   }
-  const { error } = await db
+  let { error } = await db
     .from("books")
     .update({
       status,
@@ -702,6 +740,15 @@ async function moveBook(status) {
       updated_at: new Date().toISOString(),
     })
     .eq("id", state.selected.id);
+  let legacyMode = false;
+  if (isMissingUpgrade(error)) {
+    const fallback = await db
+      .from("books")
+      .update({ status, updated_at: new Date().toISOString() })
+      .eq("id", state.selected.id);
+    error = fallback.error;
+    legacyMode = !error;
+  }
   if (error) {
     state.selected.status = old;
     state.selected.acquiredAt = oldAcquiredAt;
@@ -709,7 +756,11 @@ async function moveBook(status) {
   }
   persist();
   detailModal.classList.remove("open");
-  toast("הספר הועבר וסונכרן");
+  toast(
+    legacyMode
+      ? "המצב נשמר. תאריך ההשגה יסתנכרן לאחר הפעלת המיגרציות."
+      : "הספר הועבר וסונכרן",
+  );
   render();
 }
 function toast(t) {

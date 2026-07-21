@@ -172,6 +172,37 @@
       .hidden {
         display: none !important;
       }
+      .scanner {
+        position: fixed;
+        inset: 0;
+        z-index: 50;
+        display: none;
+        place-items: center;
+        padding: 18px;
+        background: rgba(15, 28, 24, 0.72);
+      }
+      .scanner.open {
+        display: grid;
+      }
+      .scannerDialog {
+        width: min(100%, 560px);
+        max-height: calc(100vh - 36px);
+        overflow: auto;
+        background: var(--card);
+        border-radius: 22px;
+        padding: 18px;
+        box-shadow: var(--shadow);
+      }
+      .scannerVideo {
+        display: block;
+        width: 100%;
+        min-height: 250px;
+        max-height: 62vh;
+        margin-top: 14px;
+        border-radius: 16px;
+        background: #111;
+        object-fit: cover;
+      }
       @media (max-width: 520px) {
         .preview {
           grid-template-columns: 85px 1fr;
@@ -245,7 +276,7 @@
           <button id="logout" class="ghost">יציאה</button>
         </div>
         <p class="sub">
-          הזן את המספר המודפס ליד הברקוד. הסריקה החיה הוסרה עד שתהיה יציבה.
+          אפשר לסרוק את הברקוד במצלמה או להזין את המספר המודפס לידו.
         </p>
         <div class="field">
           <label>ISBN-10 או ISBN-13</label
@@ -257,7 +288,8 @@
           />
         </div>
         <div class="actions">
-          <button id="lookup" class="primary">איתור פרטי הספר</button
+          <button id="scanIsbn" class="primary">סריקה במצלמה</button
+          ><button id="lookup" class="ghost">איתור פרטי הספר</button
           ><button id="clear" class="ghost">ניקוי</button>
         </div>
         <div id="message" class="message" aria-live="polite"></div>
@@ -283,6 +315,33 @@
         </div>
       </section>
     </main>
+    <section
+      id="isbnScanner"
+      class="scanner"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="scannerTitle"
+    >
+      <div class="scannerDialog">
+        <div class="head">
+          <div>
+            <h2 id="scannerTitle">סריקת ברקוד ISBN</h2>
+            <div class="sub">כוון את המצלמה לברקוד שבגב הספר.</div>
+          </div>
+          <button id="closeScanner" class="ghost" type="button">סגירה</button>
+        </div>
+        <video
+          id="isbnVideo"
+          class="scannerVideo"
+          playsinline
+          muted
+          aria-label="תצוגת מצלמה לסריקת ISBN"
+        ></video>
+        <p id="scannerMessage" class="sub" aria-live="polite">
+          המצלמה תיפתח לאחר מתן הרשאה.
+        </p>
+      </div>
+    </section>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="./supabase-client.js"></script>
     <script src="./isbn-core.js"></script>
@@ -325,9 +384,20 @@
         $("isbn").value = code;
         if (!valid(code)) return msg("מספר ה ISBN אינו תקין.", true);
         msg("בודק אם הספר כבר נמצא ברשימה...");
-        const { data, error } = await db
+        let { data, error } = await db
           .from("books")
           .select("id,title,notes,status,isbn");
+        if (
+          error &&
+          (["PGRST204", "42703"].includes(error.code) ||
+            /column .* does not exist|schema cache/i.test(error.message || ""))
+        ) {
+          const fallback = await db
+            .from("books")
+            .select("id,title,notes,status");
+          data = fallback.data;
+          error = fallback.error;
+        }
         if (error) return msg("לא ניתן לבדוק את הרשימה כרגע.", true);
         const duplicate = (data || []).find((book) => {
           if (clean(book.isbn) === code && book.status !== "סל מחזור")
@@ -343,16 +413,26 @@
         try {
           const response = await fetch(
             "https://www.googleapis.com/books/v1/volumes?q=isbn:" +
-              encodeURIComponent(code),
+              encodeURIComponent(code) +
+              "&langRestrict=he&maxResults=5",
           );
           if (!response.ok) throw new Error("HTTP " + response.status);
           const payload = await response.json(),
-            item = payload.items && payload.items[0];
-          if (!item)
-            return msg(
+            items = payload.items || [],
+            item =
+              items.find(
+                (candidate) => candidate.volumeInfo?.language === "he",
+              ) || items[0];
+          if (!item) {
+            coverUrl = "";
+            $("cover").removeAttribute("src");
+            $("form").classList.remove("hidden");
+            msg(
               "לא נמצאו פרטים לספר. אפשר להזין את הפרטים ידנית.",
               true,
             );
+            return;
+          }
           const info = item.volumeInfo || {};
           $("title").value =
             (info.title || "") + (info.subtitle ? ": " + info.subtitle : "");
@@ -397,7 +477,18 @@
           created_at: now,
           updated_at: now,
         };
-        const { error } = await db.from("books").insert(row);
+        let { error } = await db.from("books").insert(row);
+        let legacyMode = false;
+        if (
+          error &&
+          (["PGRST204", "42703"].includes(error.code) ||
+            /column .* does not exist|schema cache/i.test(error.message || ""))
+        ) {
+          delete row.isbn;
+          const fallback = await db.from("books").insert(row);
+          error = fallback.error;
+          legacyMode = !error;
+        }
         $("save").disabled = false;
         $("save").textContent = "שמירה במדף החסר";
         if (error)
@@ -405,7 +496,11 @@
             "השמירה נכשלה: " + (error.message || "שגיאה לא ידועה"),
             true,
           );
-        msg("הספר נשמר וסונכרן במדף החסר.");
+        msg(
+          legacyMode
+            ? "הספר נשמר. ה ISBN נשמר בתאימות לאחור עד להפעלת המיגרציה."
+            : "הספר נשמר וסונכרן במדף החסר.",
+        );
         reset();
       }
       function showSession(session) {
@@ -434,6 +529,8 @@
       db.auth.getSession().then(({ data }) => showSession(data.session));
       db.auth.onAuthStateChange((event, session) => showSession(session));
     </script>
+    <script src="https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.5/umd/index.min.js"></script>
+    <script src="isbn-scanner.js"></script>
     <script src="cover-recognition.js"></script>
   </body>
 </html>
