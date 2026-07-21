@@ -40,6 +40,24 @@ test("main workflow loads, edits, favorites, acquires and trashes without consol
       created_at: "2026-07-01T00:00:00Z",
       updated_at: "2026-07-01T00:00:00Z",
     },
+    {
+      id: "33333333-3333-4333-8333-333333333333",
+      user_id: "22222222-2222-4222-8222-222222222222",
+      title: "  ספר   בדיקה  ",
+      author: "עותק ישן",
+      cover: "",
+      notes: "",
+      status: "סל מחזור",
+      priority: "רגילה",
+      is_favorite: false,
+      is_required: false,
+      isbn: null,
+      acquired_at: null,
+      purchase_price: null,
+      new_price: null,
+      created_at: "2026-06-01T00:00:00Z",
+      updated_at: "2026-06-01T00:00:00Z",
+    },
   ];
   const missingUpgrade = {
     code: "PGRST204",
@@ -153,5 +171,28 @@ test("main workflow loads, edits, favorites, acquires and trashes without consol
   window.document.querySelector('[data-move="סל מחזור"]').click();
   await wait();
   assert.equal(remoteBooks[0].status, "סל מחזור");
+
+  window.document.getElementById("add").click();
+  window.document.getElementById("bookTitle").value = " ספר בדיקה ";
+  window.document.getElementById("save").click();
+  await wait();
+  assert.equal(remoteBooks.length, 2);
+  assert.match(window.document.getElementById("toast").textContent, /כבר קיים/);
+  window.document.getElementById("cancel").click();
+
+  window.document.querySelector('[data-status="סל מחזור"]').click();
+  assert.equal(window.document.querySelectorAll(".book").length, 2);
+  window.document.querySelector(".book").click();
+  window.document.querySelector('[data-move="מחפש"]').click();
+  await wait();
+  assert.equal(remoteBooks.filter((book) => book.status === "מחפש").length, 1);
+  window.document.querySelector(".book").click();
+  window.document.querySelector('[data-move="מחפש"]').click();
+  await wait();
+  assert.equal(remoteBooks.filter((book) => book.status === "מחפש").length, 1);
+  assert.match(
+    window.document.getElementById("toast").textContent,
+    /אי אפשר לשחזר/,
+  );
   assert.deepEqual(errors, []);
 });
