@@ -20,6 +20,10 @@
 .formGrid .wide {
   grid-column: 1 / -1;
 }
+.formGrid > *,
+.offerGrid > * {
+  min-width: 0;
+}
 .field select,
 .field textarea {
   width: 100%;
