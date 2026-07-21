@@ -3,7 +3,6 @@ import {
   assertEmailAccepted,
   dealDedupeKey,
   dealTotal,
-  isScheduleAuthorized,
   isUuid,
   jerusalemParts,
   priceDrop,
@@ -15,7 +14,6 @@ import {
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") || "";
-const SCHEDULE_SECRET = Deno.env.get("ALERTS_SCHEDULE_SECRET") || "";
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY") || "";
 const EMAIL_FROM =
   Deno.env.get("ALERTS_EMAIL_FROM") || "המדף החסר <onboarding@resend.dev>";
@@ -351,13 +349,13 @@ async function processScheduledUser(
 }
 
 async function processSchedule(request: Request) {
-  if (
-    !isScheduleAuthorized(
-      SCHEDULE_SECRET,
-      request.headers.get("x-schedule-secret"),
-    )
-  )
-    return json({ error: "unauthorized" }, 401);
+  const providedSecret = request.headers.get("x-schedule-secret") || "";
+  const { data: authorized, error: authorizationError } = await service().rpc(
+    "verify_alerts_schedule_secret",
+    { provided_secret: providedSecret },
+  );
+  if (authorizationError) throw authorizationError;
+  if (!authorized) return json({ error: "unauthorized" }, 401);
   const local = jerusalemParts();
   const { data: rows, error } = await service().from("books").select("user_id");
   if (error) throw error;
