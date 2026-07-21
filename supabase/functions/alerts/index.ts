@@ -321,9 +321,6 @@ async function processSchedule(request: Request) {
   )
     return json({ error: "unauthorized" }, 401);
   const local = jerusalemParts();
-  if (![7, 19].includes(local.hour))
-    return json({ ok: true, skipped: "outside configured local hours", local });
-  const kind = local.hour === 7 ? "בוקר" : "ערב";
   const { data: rows, error } = await service.from("books").select("user_id");
   if (error) throw error;
   const users: string[] = [
@@ -336,16 +333,29 @@ async function processSchedule(request: Request) {
   const results = [];
   for (const userId of users) {
     try {
-      results.push({
-        userId,
-        ...(await processScheduledUser(userId, local.date, kind)),
-      });
+      const settings = await settingsFor(userId);
+      const morningHour = Number(settings.morning_report_hour ?? 7);
+      const eveningHour = Number(settings.evening_check_hour ?? 19);
+      const kinds: ("בוקר" | "ערב")[] = [];
+      if (local.hour === morningHour) kinds.push("בוקר");
+      if (local.hour === eveningHour) kinds.push("ערב");
+      if (!kinds.length) {
+        results.push({ userId, skipped: "outside configured user hours" });
+        continue;
+      }
+      for (const kind of kinds) {
+        results.push({
+          userId,
+          kind,
+          ...(await processScheduledUser(userId, local.date, kind)),
+        });
+      }
     } catch (error) {
       console.error(`Scheduled processing failed for ${userId}`, error);
       results.push({ userId, error: "processing failed" });
     }
   }
-  return json({ ok: true, local, kind, users: users.length, results });
+  return json({ ok: true, local, users: users.length, results });
 }
 
 Deno.serve(async (request) => {
