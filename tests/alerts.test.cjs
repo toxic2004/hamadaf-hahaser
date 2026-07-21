@@ -187,3 +187,31 @@ test("alerts deployment validates credentials and deploys without JWT verificati
   assert.match(workflow, /--project-ref "\$SUPABASE_PROJECT_REF"/);
   assert.match(workflow, /--no-verify-jwt/);
 });
+
+test("manual deployed alerts test is guarded and uses repository secrets", () => {
+  const workflow = fs.readFileSync(
+    path.join(root, ".github/workflows/test-alerts.yml"),
+    "utf8",
+  );
+
+  assert.match(workflow, /workflow_dispatch:/);
+  assert.match(workflow, /test \"\$CONFIRMATION\" = \"RUN\"/);
+  assert.match(workflow, /secrets\.SUPABASE_ALERTS_URL/);
+  assert.match(workflow, /secrets\.SUPABASE_ALERTS_SCHEDULE_SECRET/);
+  assert.match(workflow, /npm run test:alerts:live/);
+  assert.doesNotMatch(workflow, /schedule:\s*\n/);
+});
+
+test("manual alerts test rejects bad authorization before invoking the schedule", () => {
+  const source = fs.readFileSync(
+    path.join(root, "scripts/alerts-smoke-test.mjs"),
+    "utf8",
+  );
+
+  assert.match(source, /invalidSecret/);
+  assert.match(source, /status !== 401/);
+  assert.match(source, /accepted\.body\?\.ok !== true/);
+  assert.match(source, /AbortSignal\.timeout\(REQUEST_TIMEOUT_MS\)/);
+  assert.doesNotMatch(source, /console\.log\([^\n]*process\.env/i);
+  assert.doesNotMatch(source, /console\.log\([^\n]*\$\{secret\}/i);
+});

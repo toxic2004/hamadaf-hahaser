@@ -1,0 +1,49 @@
+name: Test deployed alerts
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type RUN to invoke the deployed schedule once
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-deployed-alerts
+  cancel-in-progress: false
+
+jobs:
+  smoke-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      SUPABASE_ALERTS_URL: ${{ secrets.SUPABASE_ALERTS_URL }}
+      SUPABASE_ALERTS_SCHEDULE_SECRET: ${{ secrets.SUPABASE_ALERTS_SCHEDULE_SECRET }}
+    steps:
+      - name: Confirm intentional live test
+        env:
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: test "$CONFIRMATION" = "RUN"
+
+      - name: Check required secrets
+        run: |
+          test -n "$SUPABASE_ALERTS_URL" || {
+            echo "Missing GitHub secret: SUPABASE_ALERTS_URL"
+            exit 1
+          }
+          test -n "$SUPABASE_ALERTS_SCHEDULE_SECRET" || {
+            echo "Missing GitHub secret: SUPABASE_ALERTS_SCHEDULE_SECRET"
+            exit 1
+          }
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Verify deployed alerts endpoint
+        run: npm run test:alerts:live
