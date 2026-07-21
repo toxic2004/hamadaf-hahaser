@@ -4,7 +4,7 @@
 create table if not exists public.price_offers (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id),
-  book_id uuid not null references public.books(id) on delete cascade,
+  book_id text not null references public.books(id) on delete cascade,
   source text not null,
   source_listing_key text,
   listing_title text,
@@ -55,7 +55,7 @@ create index if not exists price_offers_due_idx
 create table if not exists public.price_history (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id),
-  book_id uuid not null references public.books(id) on delete cascade,
+  book_id text not null references public.books(id) on delete cascade,
   offer_id uuid not null references public.price_offers(id) on delete cascade,
   captured_on date not null default current_date,
   item_price numeric(10, 2),
@@ -79,7 +79,7 @@ create index if not exists price_history_book_date_idx
 create table if not exists public.daily_book_prices (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id),
-  book_id uuid not null references public.books(id) on delete cascade,
+  book_id text not null references public.books(id) on delete cascade,
   offer_id uuid references public.price_offers(id) on delete set null,
   captured_on date not null default current_date,
   item_price numeric(10, 2),
@@ -102,7 +102,7 @@ create index if not exists daily_book_prices_book_date_idx
 create table if not exists public.notifications (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id),
-  book_id uuid references public.books(id) on delete cascade,
+  book_id text references public.books(id) on delete cascade,
   offer_id uuid references public.price_offers(id) on delete set null,
   notification_type text not null,
   title text not null,
