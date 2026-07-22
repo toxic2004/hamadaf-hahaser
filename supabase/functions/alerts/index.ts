@@ -158,9 +158,12 @@ async function emailNotifications(
   userId: string,
   notifications: Record<string, any>[],
 ) {
-  if (!notifications.length || !RESEND_API_KEY) return;
+  if (!notifications.length) return 0;
   const settings = await settingsFor(userId);
-  if (!settings.email_enabled || !settings.email_address) return;
+  if (!settings.email_enabled || !settings.email_address) return 0;
+  // When Resend is not configured, leave the notifications pending. The
+  // connected Gmail delivery task will send them and set emailed_at.
+  if (!RESEND_API_KEY) return 0;
   const response = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
@@ -182,12 +185,25 @@ async function emailNotifications(
   const notificationIds = notifications
     .map((item) => item.id)
     .filter((id) => isUuid(id));
-  if (!notificationIds.length) return;
+  if (!notificationIds.length) return 0;
   const { error } = await service()
     .from("notifications")
     .update({ emailed_at: new Date().toISOString() })
     .in("id", notificationIds);
   if (error) throw error;
+  return notificationIds.length;
+}
+
+async function emailPendingNotifications(userId: string) {
+  const { data, error } = await service()
+    .from("notifications")
+    .select("*")
+    .eq("user_id", userId)
+    .is("emailed_at", null)
+    .order("created_at", { ascending: true })
+    .limit(100);
+  if (error) throw error;
+  return emailNotifications(userId, data || []);
 }
 
 async function processOfferMode(request: Request, body: Record<string, any>) {
@@ -219,13 +235,14 @@ async function processOfferMode(request: Request, body: Record<string, any>) {
     await priceDropNotification(offer),
   ].filter(Boolean) as Record<string, any>[];
   let emailError = false;
+  let emailed = 0;
   try {
-    await emailNotifications(authData.user.id, created);
+    emailed = await emailPendingNotifications(authData.user.id);
   } catch (error) {
     emailError = true;
     console.error("Immediate email delivery failed", error);
   }
-  return json({ ok: true, created: created.length, emailError });
+  return json({ ok: true, created: created.length, emailed, emailError });
 }
 
 async function processScheduledUser(
@@ -251,7 +268,17 @@ async function processScheduledUser(
       .eq("run_kind", kind)
       .single();
     if (existing.error) throw existing.error;
-    if (existing.data.completed_at) return { skipped: true, created: 0 };
+    if (existing.data.completed_at) {
+      let emailError = false;
+      let emailed = 0;
+      try {
+        emailed = await emailPendingNotifications(userId);
+      } catch (error) {
+        emailError = true;
+        console.error(`Scheduled email retry failed for ${userId}`, error);
+      }
+      return { skipped: true, created: 0, emailed, emailError };
+    }
     runId = existing.data.id;
     const restart = await service()
       .from("price_scan_runs")
@@ -327,8 +354,9 @@ async function processScheduledUser(
     if (report) created.push(report);
   }
   let emailError = false;
+  let emailed = 0;
   try {
-    await emailNotifications(userId, created);
+    emailed = await emailPendingNotifications(userId);
   } catch (error) {
     emailError = true;
     console.error(`Scheduled email delivery failed for ${userId}`, error);
@@ -339,13 +367,14 @@ async function processScheduledUser(
       completed_at: new Date().toISOString(),
       result: {
         created: created.length,
+        emailed,
         due: due.length,
         email_error: emailError,
       },
     })
     .eq("id", runId);
   if (completed.error) throw completed.error;
-  return { skipped: false, created: created.length, emailError };
+  return { skipped: false, created: created.length, emailed, emailError };
 }
 
 async function processSchedule(request: Request) {
