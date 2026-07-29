@@ -41,8 +41,8 @@ function book(title, author = "", isbn = "") {
   };
 }
 
-async function startPrompt(options) {
-  const pending = options.api.promptAndImport({
+function startPrompt(options) {
+  return options.api.promptAndImport({
     document: options.dom.window.document,
     db: options.db,
     user: options.user,
@@ -51,8 +51,6 @@ async function startPrompt(options) {
     bookToRow: (item) => ({ ...item, user_id: options.user.id }),
     onImported: options.onImported,
   });
-  await Promise.resolve();
-  return pending;
 }
 
 test("empty cloud requires explicit confirmation before importing", async () => {
@@ -60,7 +58,7 @@ test("empty cloud requires explicit confirmation before importing", async () => 
   const db = makeDb({ error: null });
   const localBooks = [book("ספר מקומי")];
   let imported = [];
-  const pending = await startPrompt({
+  const pending = startPrompt({
     dom,
     api,
     db,
@@ -84,7 +82,7 @@ test("temporary Supabase write failure does not change local display", async () 
   const { dom, api } = loadModule();
   const db = makeDb({ error: { message: "temporary network failure" } });
   let changed = false;
-  const pending = await startPrompt({
+  const pending = startPrompt({
     dom,
     api,
     db,
@@ -123,7 +121,7 @@ test("new signed in user without local data triggers no import", async () => {
   assert.equal(dom.window.document.getElementById("localImportModal"), null);
 });
 
-test("old local list is parsed and shown for confirmation", async () => {
+test("old local list is parsed and shown for confirmation", () => {
   const { api } = loadModule();
   const parsed = api.parseLocalBooks(
     JSON.stringify([book("ספר מגרסה קודמת"), null, { invalid: true }]),
@@ -135,7 +133,7 @@ test("old local list is parsed and shown for confirmation", async () => {
 test("cancel closes the dialog without writing to Supabase", async () => {
   const { dom, api } = loadModule();
   const db = makeDb({ error: null });
-  const pending = await startPrompt({
+  const pending = startPrompt({
     dom,
     api,
     db,
@@ -164,7 +162,7 @@ test("duplicates are excluded and only new books are written", async () => {
     book("ספר חדש", "מחבר חדש"),
   ];
   const remoteBooks = [book("עותק בענן", "מחבר אחר", "9781234")];
-  const pending = await startPrompt({
+  const pending = startPrompt({
     dom,
     api,
     db,
