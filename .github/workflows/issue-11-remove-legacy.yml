@@ -1,0 +1,158 @@
+name: Issue 11 remove legacy fallback
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/issue-11-remove-legacy.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Remove legacy fallback paths
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('app.js')
+          text = path.read_text(encoding='utf-8')
+
+          legacy_functions = '''function legacyBookRow(b) {
+            const row = bookToRow(b);
+            return {
+              id: row.id,
+              user_id: row.user_id,
+              title: row.title,
+              author: row.author,
+              cover: row.cover,
+              notes: row.notes,
+              status: row.status,
+              created_at: row.created_at,
+              updated_at: row.updated_at,
+            };
+          }
+          function isMissingUpgrade(error) {
+            return Boolean(
+              error &&
+                (["PGRST204", "42703"].includes(error.code) ||
+                  /column .* does not exist|schema cache/i.test(error.message || "")),
+            );
+          }
+          '''
+
+          load_fallback = '''    let { error: migrateError } = await db
+                .from("books")
+                .upsert(state.books.map(bookToRow));
+              if (isMissingUpgrade(migrateError)) {
+                const fallback = await db
+                  .from("books")
+                  .upsert(state.books.map(legacyBookRow));
+                migrateError = fallback.error;
+                if (!migrateError) toast("הספרים סונכרנו. יש להפעיל את מיגרציות השדרוג.");
+              }
+          '''
+
+          load_replacement = '''    const { error: migrateError } = await db
+                .from("books")
+                .upsert(state.books.map(bookToRow));
+          '''
+
+          save_fallback = '''  let { error } = await db.from("books").upsert(bookToRow(book));
+            let legacyMode = false;
+            if (isMissingUpgrade(error)) {
+              const fallback = await db.from("books").upsert(legacyBookRow(book));
+              error = fallback.error;
+              legacyMode = !error;
+            }
+          '''
+
+          save_replacement = '''  const { error } = await db.from("books").upsert(bookToRow(book));
+          '''
+
+          save_toast = '''  toast(
+              legacyMode
+                ? "הספר נשמר. עדיפות ומחירים יסתנכרנו לאחר הפעלת המיגרציות."
+                : "הספר נשמר בלי שינוי אוטומטי",
+            );
+          '''
+
+          save_toast_replacement = '''  toast("הספר נשמר בלי שינוי אוטומטי");
+          '''
+
+          move_fallback = '''  let { error } = await db
+              .from("books")
+              .update({
+                status,
+                acquired_at: state.selected.acquiredAt
+                  ? new Date(state.selected.acquiredAt).toISOString()
+                  : null,
+                updated_at: new Date().toISOString(),
+              })
+              .eq("id", state.selected.id)
+              .eq("user_id", state.user.id);
+            let legacyMode = false;
+            if (isMissingUpgrade(error)) {
+              const fallback = await db
+                .from("books")
+                .update({ status, updated_at: new Date().toISOString() })
+                .eq("id", state.selected.id)
+                .eq("user_id", state.user.id);
+              error = fallback.error;
+              legacyMode = !error;
+            }
+          '''
+
+          move_replacement = '''  const { error } = await db
+              .from("books")
+              .update({
+                status,
+                acquired_at: state.selected.acquiredAt
+                  ? new Date(state.selected.acquiredAt).toISOString()
+                  : null,
+                updated_at: new Date().toISOString(),
+              })
+              .eq("id", state.selected.id)
+              .eq("user_id", state.user.id);
+          '''
+
+          move_toast = '''  toast(
+              legacyMode
+                ? "המצב נשמר. תאריך ההשגה יסתנכרן לאחר הפעלת המיגרציות."
+                : "הספר הועבר וסונכרן",
+            );
+          '''
+
+          replacements = [
+              (legacy_functions, ''),
+              (load_fallback, load_replacement),
+              (save_fallback, save_replacement),
+              (save_toast, save_toast_replacement),
+              (move_fallback, move_replacement),
+              (move_toast, '  toast("הספר הועבר וסונכרן");\n'),
+          ]
+
+          for old, new in replacements:
+              if old not in text:
+                  raise SystemExit('Expected Issue 11 code block was not found; aborting without changes.')
+              text = text.replace(old, new, 1)
+
+          forbidden = ('legacyBookRow', 'isMissingUpgrade', 'legacyMode')
+          for token in forbidden:
+              if token in text:
+                  raise SystemExit(f'Legacy token still present after patch: {token}')
+
+          path.write_text(text, encoding='utf-8')
+      - name: Validate JavaScript syntax
+        run: node --check app.js
+      - name: Commit patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app.js
+          git commit -m "fix: remove legacy partial-save fallbacks"
+          git push
