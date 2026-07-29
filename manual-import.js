@@ -36,9 +36,7 @@
     if (isbn) return "isbn:" + isbn;
     const title = normalize(book && book.title);
     const author = normalize(book && book.author);
-    return author
-      ? "title-author:" + title + ":" + author
-      : "title:" + title;
+    return author ? "title-author:" + title + ":" + author : "title:" + title;
   }
 
   function analyze(localBooks, remoteBooks) {
@@ -74,7 +72,7 @@
     overlay.innerHTML =
       '<div class="modal" style="max-width:520px;align-self:center">' +
       '<div class="head"><h2>ייבוא רשימה מקומית</h2></div>' +
-      '<p>נמצאה רשימת ספרים שנשמרה בדפדפן הזה.</p>' +
+      "<p>נמצאה רשימת ספרים שנשמרה בדפדפן הזה.</p>" +
       '<div id="localImportSummary"></div>' +
       '<p class="sub">כפילות נקבעת לפי ISBN. כשאין ISBN, לפי שם הספר והמחבר. כשאין מחבר, לפי שם הספר.</p>' +
       '<p id="localImportError" class="sub"></p>' +
@@ -138,9 +136,7 @@
     if (!confirmed) return { status: "cancelled", imported: 0, analysis };
 
     if (!analysis.newBooks.length) {
-      document
-        .getElementById("localImportModal")
-        .classList.remove("open");
+      document.getElementById("localImportModal").classList.remove("open");
       return { status: "completed", imported: 0, analysis };
     }
 
