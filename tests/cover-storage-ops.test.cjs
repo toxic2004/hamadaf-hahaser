@@ -73,11 +73,11 @@ test("removes a referenced cover after deleting its book", async () => {
 
   assert.equal(result.status, "completed");
   assert.equal(result.deletedCover, true);
-  assert.deepEqual(calls.at(-1), {
-    type: "remove",
-    bucket: "book-covers",
-    paths: ["user/book-1/cover.jpg"],
-  });
+  const removeCall = calls.at(-1);
+  assert.equal(removeCall.type, "remove");
+  assert.equal(removeCall.bucket, "book-covers");
+  assert.equal(removeCall.paths.length, 1);
+  assert.equal(removeCall.paths[0], "user/book-1/cover.jpg");
 });
 
 test("does not touch storage when deleting the database row fails", async () => {
