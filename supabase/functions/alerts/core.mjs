@@ -16,7 +16,7 @@ export function jerusalemParts(now = new Date()) {
 
 export function scheduledKinds(settings, localHour) {
   const morningHour = Number(settings.morning_report_hour ?? 7);
-  const eveningHour = Number(settings.evening_check_hour ?? 19);
+  const eveningHour = Number(settings.evening_check_hour ?? 21);
   const kinds = [];
   if (localHour === morningHour) kinds.push("בוקר");
   if (localHour === eveningHour) kinds.push("ערב");
