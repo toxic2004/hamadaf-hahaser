@@ -84,6 +84,19 @@ test("ISBN scanner prefers a rear non-ultrawide camera and offers photo fallback
   assert.match(scanner, /decodeFromImageUrl/);
 });
 
+test("Israeli book barcode fallback uses Quagga2 EAN readers and preserves non-ISBN codes", () => {
+  const html = read("isbn.html");
+  const scanner = read("barcode-ean.js");
+  assert.match(html, /barcode-ean\.js\?v=ean-israeli-books-20260729-1/);
+  assert.match(scanner, /@ericblade\/quagga2@1\.12\.1/);
+  assert.match(scanner, /"ean_reader"/);
+  assert.match(scanner, /"ean_8_reader"/);
+  assert.match(scanner, /"upc_reader"/);
+  assert.match(scanner, /סריקת ברקוד רגיל/);
+  assert.match(scanner, /\[BARCODE:\$\{code\}\]/);
+  assert.match(scanner, /isRegularBarcode/);
+});
+
 test("all local script and stylesheet references exist", () => {
   for (const file of ["index.html", "isbn.html", "statistics.html", "prices.html", "notifications.html"]) {
     if (!fs.existsSync(path.join(root, file))) continue;
