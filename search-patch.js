@@ -1,6 +1,6 @@
 (function patchBookSearchAndDuplicates() {
   const originalFetch = window.fetch.bind(window);
-  const oldFilter = '(!q || normalize(b.title).includes(q))';
+  const oldFilter = "(!q || normalize(b.title).includes(q))";
   const newFilter = `(
         !q ||
         [b.title, b.author, b.isbn, b.notes].some((value) =>
