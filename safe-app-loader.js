@@ -42,11 +42,11 @@
       };
       storageScript.onload = function () {
         const migrationScript = document.createElement('script');
-        migrationScript.src = './migrate-one-cover.js?v=single-test-20260729-2';
+        migrationScript.src = './migrate-one-cover.js?v=all-covers-20260729-1';
         migrationScript.async = false;
-        migrationScript.dataset.hamadafSingleCoverMigration = 'true';
+        migrationScript.dataset.hamadafAllCoverMigration = 'true';
         migrationScript.onerror = function () {
-          console.error('Single cover migration script failed to load');
+          console.error('Full cover migration script failed to load');
         };
         document.head.appendChild(migrationScript);
       };
