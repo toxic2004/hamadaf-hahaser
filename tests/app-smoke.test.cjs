@@ -59,14 +59,11 @@ test("main workflow loads, edits, favorites, acquires and trashes without consol
       updated_at: "2026-06-01T00:00:00Z",
     },
   ];
-  const missingUpgrade = {
-    code: "PGRST204",
-    message: "column is missing from the schema cache",
-  };
 
   class Query {
     constructor() {
       this.patch = null;
+      this.filters = [];
     }
     select() {
       return this;
@@ -88,19 +85,14 @@ test("main workflow loads, edits, favorites, acquires and trashes without consol
       return this;
     }
     eq(column, value) {
-      if (this.patch) {
-        const error = Object.hasOwn(this.patch, "acquired_at")
-          ? missingUpgrade
-          : null;
-        if (!error) {
-          const book = remoteBooks.find((item) => item[column] === value);
-          if (book) Object.assign(book, this.patch);
-        }
-        return {
-          eq: () => Promise.resolve({ error }),
-        };
-      }
-      return this;
+      if (!this.patch) return this;
+      this.filters.push([column, value]);
+      if (this.filters.length < 2) return this;
+      const book = remoteBooks.find((item) =>
+        this.filters.every(([key, expected]) => item[key] === expected),
+      );
+      if (book) Object.assign(book, this.patch);
+      return Promise.resolve({ error: null });
     }
   }
 
@@ -164,10 +156,10 @@ test("main workflow loads, edits, favorites, acquires and trashes without consol
   window.document.querySelector('[data-move="השגתי"]').click();
   await wait();
   assert.equal(remoteBooks[0].status, "השגתי");
-  assert.equal(remoteBooks[0].acquired_at, null);
+  assert.ok(remoteBooks[0].acquired_at);
   assert.match(
     window.document.getElementById("toast").textContent,
-    /המיגרציות/,
+    /הספר הועבר וסונכרן/,
   );
 
   window.document.querySelector('[data-status="השגתי"]').click();
