@@ -23,7 +23,9 @@
       return { status: "completed", deletedCover: Boolean(coverPath) };
     }
 
-    const { error: restoreError } = await db.from("books").upsert(bookToRow(book));
+    const { error: restoreError } = await db
+      .from("books")
+      .upsert(bookToRow(book));
     if (restoreError) {
       return {
         status: "rollback-failed",
