@@ -64,6 +64,16 @@ test("ISBN scanner loads pinned ZXing from two CDNs with fallback", () => {
   assert.match(scanner, /ensureZxingLoaded/);
 });
 
+test("ISBN scanner targets book barcode formats and reports detected non-ISBN values", () => {
+  const scanner = read("isbn-scanner.js");
+  assert.match(scanner, /BarcodeFormat\.EAN_13/);
+  assert.match(scanner, /BarcodeFormat\.EAN_8/);
+  assert.match(scanner, /DecodeHintType\.TRY_HARDER/);
+  assert.match(scanner, /זוהה ברקוד/);
+  assert.match(scanner, /נמצא ISBN/);
+  assert.match(scanner, /\(result, error\) =>/);
+});
+
 test("all local script and stylesheet references exist", () => {
   for (const file of ["index.html", "isbn.html", "statistics.html", "prices.html", "notifications.html"]) {
     if (!fs.existsSync(path.join(root, file))) continue;
