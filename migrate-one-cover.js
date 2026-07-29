@@ -1,6 +1,6 @@
 (async function migrateOneLegacyCover() {
-  const TARGET_BOOK_ID = "00b5b580-befa-40bc-b520-4f778ecff8e3";
-  const TARGET_BOOK_TITLE = "המטופלת השקטה";
+  const TARGET_BOOK_ID = "b6b1bb06-dfcf-459e-a1cd-bbc58897dd87";
+  const TARGET_BOOK_TITLE = "עץ החיים והכסף";
   const BUCKET = "book-covers";
 
   if (!window.db || !window.state || !window.state.user) return;
