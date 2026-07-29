@@ -1,0 +1,3 @@
+Issue 10 deployment marker.
+Client book queries are scoped by user_id in app.js.
+Created to trigger a fresh GitHub Pages build after the security fix.
