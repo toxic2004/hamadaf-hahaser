@@ -100,12 +100,21 @@
           migrated += 1;
         } catch (error) {
           failed += 1;
-          console.error("Legacy cover migration failed", row.id, row.title, error);
+          console.error(
+            "Legacy cover migration failed",
+            row.id,
+            row.title,
+            error,
+          );
           if (uploadedPath) {
             try {
               await window.db.storage.from(BUCKET).remove([uploadedPath]);
             } catch (cleanupError) {
-              console.error("Failed to clean partial upload", uploadedPath, cleanupError);
+              console.error(
+                "Failed to clean partial upload",
+                uploadedPath,
+                cleanupError,
+              );
             }
           }
         }
@@ -125,7 +134,11 @@
 
       toast(
         failed
-          ? "הועברו " + migrated + " כריכות. " + failed + " נכשלו ונשארו ללא שינוי"
+          ? "הועברו " +
+              migrated +
+              " כריכות. " +
+              failed +
+              " נכשלו ונשארו ללא שינוי"
           : "כל " + migrated + " הכריכות הועברו ל-Storage",
       );
     } catch (error) {
@@ -149,7 +162,9 @@
     }
 
     if (Date.now() - startedAt >= MAX_WAIT_MS) {
-      console.error("Legacy cover migration did not start because the app was not ready");
+      console.error(
+        "Legacy cover migration did not start because the app was not ready",
+      );
       toast("המיגרציה לא התחילה. סגור את האפליקציה ופתח מחדש");
       return;
     }

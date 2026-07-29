@@ -1,59 +1,59 @@
 (function loadAppWithCoverStorage() {
-  if (document.querySelector('script[data-hamadaf-original-app]')) return;
+  if (document.querySelector("script[data-hamadaf-original-app]")) return;
 
   function showLoadError(message) {
-    const syncText = document.getElementById('syncText');
-    if (syncText) syncText.textContent = 'שגיאה בטעינת האפליקציה';
-    const toast = document.getElementById('toast');
+    const syncText = document.getElementById("syncText");
+    if (syncText) syncText.textContent = "שגיאה בטעינת האפליקציה";
+    const toast = document.getElementById("toast");
     if (toast) {
       toast.textContent = message;
-      toast.classList.add('show');
+      toast.classList.add("show");
     }
   }
 
-  fetch('./app.js?v=storage-runtime-fix-20260729-1', { cache: 'no-store' })
+  fetch("./app.js?v=storage-runtime-fix-20260729-1", { cache: "no-store" })
     .then(function (response) {
-      if (!response.ok) throw new Error('app.js fetch failed');
+      if (!response.ok) throw new Error("app.js fetch failed");
       return response.text();
     })
     .then(function (source) {
       const patchedSource = source
         .replace(
-          'const db = HamadafSupabase.createClient();',
-          'window.db = HamadafSupabase.createClient();',
+          "const db = HamadafSupabase.createClient();",
+          "window.db = HamadafSupabase.createClient();",
         )
-        .replace('const state = {', 'window.state = {');
+        .replace("const state = {", "window.state = {");
 
       if (patchedSource === source) {
-        throw new Error('Expected app globals were not found');
+        throw new Error("Expected app globals were not found");
       }
 
-      const appScript = document.createElement('script');
+      const appScript = document.createElement("script");
       appScript.textContent = patchedSource;
-      appScript.dataset.hamadafOriginalApp = 'true';
+      appScript.dataset.hamadafOriginalApp = "true";
       document.head.appendChild(appScript);
 
-      const storageScript = document.createElement('script');
-      storageScript.src = './cover-storage.js?v=stage-2-runtime-fix-20260729-1';
+      const storageScript = document.createElement("script");
+      storageScript.src = "./cover-storage.js?v=stage-2-runtime-fix-20260729-1";
       storageScript.async = false;
-      storageScript.dataset.hamadafCoverStorage = 'true';
+      storageScript.dataset.hamadafCoverStorage = "true";
       storageScript.onerror = function () {
-        showLoadError('רכיב שמירת הכריכות לא נטען. נסה לרענן את הדף');
+        showLoadError("רכיב שמירת הכריכות לא נטען. נסה לרענן את הדף");
       };
       storageScript.onload = function () {
-        const migrationScript = document.createElement('script');
-        migrationScript.src = './migrate-one-cover.js?v=all-covers-20260729-2';
+        const migrationScript = document.createElement("script");
+        migrationScript.src = "./migrate-one-cover.js?v=all-covers-20260729-2";
         migrationScript.async = false;
-        migrationScript.dataset.hamadafAllCoverMigration = 'true';
+        migrationScript.dataset.hamadafAllCoverMigration = "true";
         migrationScript.onerror = function () {
-          console.error('Full cover migration script failed to load');
+          console.error("Full cover migration script failed to load");
         };
         document.head.appendChild(migrationScript);
       };
       document.head.appendChild(storageScript);
     })
     .catch(function (error) {
-      console.error('Application loader failed', error);
-      showLoadError('האפליקציה לא נטענה. סגור את הלשונית ופתח מחדש');
+      console.error("Application loader failed", error);
+      showLoadError("האפליקציה לא נטענה. סגור את הלשונית ופתח מחדש");
     });
 })();

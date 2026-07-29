@@ -8,7 +8,8 @@
     const saved = root.localStorage?.getItem(localKey);
     if (saved) {
       const parsed = JSON.parse(saved);
-      if (!Array.isArray(parsed)) throw new Error("Local books state is not an array");
+      if (!Array.isArray(parsed))
+        throw new Error("Local books state is not an array");
     }
   } catch (error) {
     try {

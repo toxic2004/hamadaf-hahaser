@@ -17,7 +17,8 @@ function escapeHtml(value) {
 
 function hourToTime(value, fallback) {
   const hour = Number(value);
-  const safeHour = Number.isInteger(hour) && hour >= 0 && hour <= 23 ? hour : fallback;
+  const safeHour =
+    Number.isInteger(hour) && hour >= 0 && hour <= 23 ? hour : fallback;
   return `${String(safeHour).padStart(2, "0")}:00`;
 }
 
@@ -79,7 +80,8 @@ async function saveSettings() {
   const morningHour = timeToHour($("morningReportHour").value, 7);
   const eveningHour = timeToHour($("eveningReportHour").value, 21);
   if (morningHour === eveningHour) {
-    $("settingsMessage").textContent = "שעות דוח הבוקר ודוח הערב חייבות להיות שונות.";
+    $("settingsMessage").textContent =
+      "שעות דוח הבוקר ודוח הערב חייבות להיות שונות.";
     return;
   }
   if ($("emailEnabled").checked && !$("notificationEmail").value.trim()) {
