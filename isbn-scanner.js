@@ -9,6 +9,7 @@
   let controls = null;
   let scanning = false;
   let zxingLoadPromise = null;
+  let lastDecodedValue = "";
 
   const element = (id) => document.getElementById(id);
 
@@ -88,6 +89,7 @@
       video.srcObject = null;
     }
     scanning = false;
+    lastDecodedValue = "";
   }
 
   function closeScanner() {
@@ -97,13 +99,44 @@
 
   async function acceptResult(result) {
     if (!result || !scanning) return;
-    const isbn = clean(result.getText());
-    if (!valid(isbn)) return;
+    const detected = clean(result.getText());
+    if (!detected || detected === lastDecodedValue) return;
+    lastDecodedValue = detected;
+
+    if (!valid(detected)) {
+      scannerMessage(
+        `זוהה ברקוד ${detected}, אך הוא אינו ISBN תקין. כוון לברקוד שמתחיל בדרך כלל ב־978 או 979.`,
+      );
+      return;
+    }
+
+    scannerMessage(`נמצא ISBN ${detected}. מאתר את פרטי הספר...`);
     scanning = false;
     stopScanner();
     element("isbnScanner")?.classList.remove("open");
-    element("isbn").value = isbn;
+    element("isbn").value = detected;
     if (typeof window.lookupBook === "function") await window.lookupBook();
+  }
+
+  function scannerHints() {
+    const api = window.ZXingBrowser;
+    if (!api?.DecodeHintType || !api?.BarcodeFormat) return undefined;
+    const hints = new Map();
+    const formats = [
+      api.BarcodeFormat.EAN_13,
+      api.BarcodeFormat.EAN_8,
+      api.BarcodeFormat.UPC_A,
+      api.BarcodeFormat.UPC_E,
+      api.BarcodeFormat.CODE_128,
+    ].filter((format) => format !== undefined);
+    if (formats.length) hints.set(api.DecodeHintType.POSSIBLE_FORMATS, formats);
+    hints.set(api.DecodeHintType.TRY_HARDER, true);
+    return hints;
+  }
+
+  function isRoutineDecodeMiss(error) {
+    const name = String(error?.name || error?.constructor?.name || "");
+    return /NotFoundException|ChecksumException|FormatException/.test(name);
   }
 
   async function openScanner() {
@@ -129,21 +162,34 @@
 
     stopScanner();
     scanning = true;
+    lastDecodedValue = "";
     scannerMessage("פותח את המצלמה...");
     try {
-      const reader = new window.ZXingBrowser.BrowserMultiFormatReader();
+      const reader = new window.ZXingBrowser.BrowserMultiFormatReader(
+        scannerHints(),
+        250,
+      );
       const nextControls = await reader.decodeFromConstraints(
         {
           audio: false,
           video: {
             facingMode: { ideal: "environment" },
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
           },
         },
         video,
-        (result) => {
-          if (result) acceptResult(result);
+        (result, error) => {
+          if (result) {
+            void acceptResult(result);
+            return;
+          }
+          if (error && !isRoutineDecodeMiss(error)) {
+            console.warn("ISBN decode warning", error);
+            scannerMessage(
+              "המצלמה פעילה אך הפענוח נתקל בבעיה. נסה להרחיק מעט את הספר ולשפר את התאורה.",
+            );
+          }
         },
       );
       if (!scanning) {
@@ -151,7 +197,9 @@
         return;
       }
       controls = nextControls;
-      scannerMessage("המצלמה פעילה. החזק את הברקוד יציב בתוך התמונה.");
+      scannerMessage(
+        "המצלמה פעילה. מקם את כל הברקוד בתוך התמונה, החזק יציב ושמור מרחק של כ־15–25 ס״מ.",
+      );
     } catch (error) {
       console.error("ISBN camera failed", error);
       stopScanner();
