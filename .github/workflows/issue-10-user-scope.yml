@@ -85,3 +85,5 @@ jobs:
           git add app.js
           git commit -m "security: scope client book queries to current user"
           git push
+
+# Triggered after workflow registration.
