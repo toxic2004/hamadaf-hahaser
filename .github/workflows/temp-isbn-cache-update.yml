@@ -1,0 +1,38 @@
+name: Temporary ISBN cache updater
+
+on:
+  push:
+    branches: [fix/isbn-detection-feedback]
+
+permissions:
+  contents: write
+
+jobs:
+  update-page:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Update ISBN scripts
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('isbn.html')
+          source = path.read_text(encoding='utf-8')
+          old = '''    <script src="https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.5/umd/index.min.js"></script>
+    <script src="isbn-scanner.js"></script>'''
+          new = '''    <script src="isbn-scanner.js?v=isbn-feedback-20260729-2"></script>'''
+          if old not in source:
+              raise SystemExit('Expected scanner script block was not found')
+          path.write_text(source.replace(old, new), encoding='utf-8')
+          PY
+      - name: Commit page update
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add isbn.html
+          if git diff --cached --quiet; then
+            echo "No changes needed"
+          else
+            git commit -m "fix: refresh ISBN scanner on iPhone"
+            git push
+          fi
