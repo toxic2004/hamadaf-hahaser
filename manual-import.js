@@ -1,4 +1,6 @@
 (function exposeManualImport(global) {
+  const IMPORT_SIGNATURE_KEY = "hamadaf-local-import-signature-v1";
+
   function normalize(value) {
     return String(value || "")
       .toLowerCase()
@@ -37,6 +39,27 @@
     const title = normalize(book && book.title);
     const author = normalize(book && book.author);
     return author ? "title-author:" + title + ":" + author : "title:" + title;
+  }
+
+  function listSignature(books) {
+    return (books || []).map(duplicateKey).sort().join("|");
+  }
+
+  function readStoredSignature() {
+    try {
+      return global.localStorage?.getItem(IMPORT_SIGNATURE_KEY) || "";
+    } catch (_error) {
+      return "";
+    }
+  }
+
+  function storeSignature(signature) {
+    try {
+      global.localStorage?.setItem(IMPORT_SIGNATURE_KEY, signature);
+      return true;
+    } catch (_error) {
+      return false;
+    }
   }
 
   function analyze(localBooks, remoteBooks) {
@@ -131,12 +154,18 @@
       return { status: "not-needed", imported: 0 };
     }
 
+    const signature = listSignature(localBooks);
+    if (signature && readStoredSignature() === signature) {
+      return { status: "not-needed", imported: 0, reason: "already-reviewed" };
+    }
+
     const analysis = analyze(localBooks, remoteBooks);
     const confirmed = await waitForDecision(document, analysis);
     if (!confirmed) return { status: "cancelled", imported: 0, analysis };
 
     if (!analysis.newBooks.length) {
       document.getElementById("localImportModal").classList.remove("open");
+      storeSignature(signature);
       return { status: "completed", imported: 0, analysis };
     }
 
@@ -156,6 +185,7 @@
     }
 
     document.getElementById("localImportModal").classList.remove("open");
+    storeSignature(signature);
     if (typeof onImported === "function") onImported(analysis.newBooks);
     return {
       status: "completed",
@@ -167,6 +197,7 @@
   global.HamadafManualImport = {
     analyze,
     duplicateKey,
+    listSignature,
     parseLocalBooks,
     promptAndImport,
   };
