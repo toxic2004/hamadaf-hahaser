@@ -28,7 +28,7 @@
       <header class="top">
         <div>
           <h1>התראות</h1>
-          <p class="sub">עסקאות משתלמות, ירידות מחיר ודוח בוקר</p>
+          <p class="sub">עסקאות משתלמות, ירידות מחיר, דוח בוקר ודוח ערב</p>
         </div>
         <nav class="sourceLinks">
           <a href="prices.html">השוואת מחירים</a><a href="./">חזרה למדף</a>
@@ -54,6 +54,14 @@
               value="70"
             />
           </div>
+          <div class="field">
+            <label for="morningReportHour">שעת דוח בוקר</label>
+            <input id="morningReportHour" type="time" step="3600" value="07:00" />
+          </div>
+          <div class="field">
+            <label for="eveningReportHour">שעת דוח ערב</label>
+            <input id="eveningReportHour" type="time" step="3600" value="21:00" />
+          </div>
           <label class="check"
             ><input id="emailEnabled" type="checkbox" /> שליחת מייל לאחר חיבור
             שירות המייל</label
@@ -63,8 +71,8 @@
             ><input id="notificationEmail" type="email" />
           </div>
           <p class="sub">
-            הבדיקות מתוכננות לשעות 07:00 ו 19:00 לפי Asia/Jerusalem. דוח הבוקר
-            נוצר פעם אחת ביום.
+            ברירת המחדל הסופית היא דוח בוקר בשעה 07:00 ודוח ערב בשעה 21:00 לפי
+            Asia/Jerusalem.
           </p>
           <button id="saveSettings" class="primary">שמירת הגדרות</button>
           <p id="settingsMessage" class="sub"></p>
