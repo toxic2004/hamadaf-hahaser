@@ -71,7 +71,17 @@ test("ISBN scanner targets book barcode formats and reports detected non-ISBN va
   assert.match(scanner, /DecodeHintType\.TRY_HARDER/);
   assert.match(scanner, /זוהה ברקוד/);
   assert.match(scanner, /נמצא ISBN/);
-  assert.match(scanner, /\(result, error\) =>/);
+  assert.match(scanner, /\(result\) =>/);
+});
+
+test("ISBN scanner prefers a rear non-ultrawide camera and offers photo fallback", () => {
+  const scanner = read("isbn-scanner.js");
+  assert.match(scanner, /function chooseRearCamera/);
+  assert.match(scanner, /ultra\[ -\]\?wide/);
+  assert.match(scanner, /enumerateDevices/);
+  assert.match(scanner, /capture = "environment"/);
+  assert.match(scanner, /צילום ברקוד/);
+  assert.match(scanner, /decodeFromImageUrl/);
 });
 
 test("all local script and stylesheet references exist", () => {
