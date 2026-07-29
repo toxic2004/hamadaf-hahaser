@@ -15,6 +15,17 @@ function escapeHtml(value) {
   );
 }
 
+function hourToTime(value, fallback) {
+  const hour = Number(value);
+  const safeHour = Number.isInteger(hour) && hour >= 0 && hour <= 23 ? hour : fallback;
+  return `${String(safeHour).padStart(2, "0")}:00`;
+}
+
+function timeToHour(value, fallback) {
+  const match = /^([01]\d|2[0-3]):[0-5]\d$/.exec(String(value || ""));
+  return match ? Number(match[1]) : fallback;
+}
+
 function renderNotifications() {
   const unread = notifications.filter((item) => !item.read_at).length;
   $("notificationCount").textContent =
@@ -53,6 +64,8 @@ async function loadSettings() {
     .maybeSingle();
   if (error) return showError("טעינת הגדרות ההתראה נכשלה.");
   $("threshold").value = data?.immediate_deal_threshold ?? 70;
+  $("morningReportHour").value = hourToTime(data?.morning_report_hour, 7);
+  $("eveningReportHour").value = hourToTime(data?.evening_check_hour, 21);
   $("emailEnabled").checked = Boolean(data?.email_enabled);
   $("notificationEmail").value = data?.email_address || user.email || "";
 }
@@ -63,6 +76,12 @@ async function saveSettings() {
     $("settingsMessage").textContent = "הסף חייב להיות בין 0 ל 100.";
     return;
   }
+  const morningHour = timeToHour($("morningReportHour").value, 7);
+  const eveningHour = timeToHour($("eveningReportHour").value, 21);
+  if (morningHour === eveningHour) {
+    $("settingsMessage").textContent = "שעות דוח הבוקר ודוח הערב חייבות להיות שונות.";
+    return;
+  }
   if ($("emailEnabled").checked && !$("notificationEmail").value.trim()) {
     $("settingsMessage").textContent = "צריך להזין כתובת מייל.";
     return;
@@ -70,8 +89,8 @@ async function saveSettings() {
   const { error } = await db.from("notification_settings").upsert({
     user_id: user.id,
     timezone: "Asia/Jerusalem",
-    morning_report_hour: 7,
-    evening_check_hour: 19,
+    morning_report_hour: morningHour,
+    evening_check_hour: eveningHour,
     immediate_deal_threshold: threshold,
     email_enabled: $("emailEnabled").checked,
     email_address: $("notificationEmail").value.trim() || null,
@@ -79,7 +98,7 @@ async function saveSettings() {
   });
   $("settingsMessage").textContent = error
     ? "שמירת ההגדרות נכשלה."
-    : "ההגדרות נשמרו.";
+    : `ההגדרות נשמרו: דוח בוקר ב ${hourToTime(morningHour, 7)} ודוח ערב ב ${hourToTime(eveningHour, 21)}.`;
 }
 
 async function markRead(id) {
