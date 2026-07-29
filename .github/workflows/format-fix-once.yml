@@ -1,0 +1,36 @@
+name: Format fix once
+
+on:
+  push:
+    paths:
+      - ".github/workflows/format-fix-once.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Format only the six failing files
+        run: |
+          npx prettier --write cover-storage.js migrate-one-cover.js notifications.html notifications.js safe-app-loader.js supabase-client.js
+          npx prettier --check cover-storage.js migrate-one-cover.js notifications.html notifications.js safe-app-loader.js supabase-client.js
+      - name: Commit formatting and remove temporary workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/format-fix-once.yml
+          git add cover-storage.js migrate-one-cover.js notifications.html notifications.js safe-app-loader.js supabase-client.js
+          if git diff --cached --quiet; then
+            echo "No formatting changes needed"
+            exit 0
+          fi
+          git commit -m "style: format CI files with Prettier"
+          git push
