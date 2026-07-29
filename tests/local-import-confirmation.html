@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>בדיקת ייבוא מקומי</title>
+  <style>
+    body{font-family:Arial,sans-serif;background:#f3f6f5;margin:0;padding:24px;color:#17342d}
+    .panel{max-width:760px;margin:auto;background:white;border-radius:18px;padding:24px;box-shadow:0 10px 30px rgba(0,0,0,.08)}
+    button{border:0;border-radius:12px;padding:12px 18px;font-size:16px;cursor:pointer}
+    .primary{background:#285f50;color:white}.ghost{background:#e8efec;color:#17342d}.actions{display:flex;gap:10px;flex-wrap:wrap}
+    .overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;padding:20px}.overlay.open{display:flex}
+    .modal{width:min(520px,100%);background:white;border-radius:18px;padding:24px;box-shadow:0 18px 50px rgba(0,0,0,.2)}
+    .field{background:#f5f8f7;border-radius:12px;padding:14px;margin:16px 0;line-height:2}.sub{color:#5d716b}.result{margin-top:18px;padding:14px;border-radius:12px;background:#eef5f2}.pass{font-weight:700}
+  </style>
+</head>
+<body>
+  <main class="panel">
+    <h1>סביבת בדיקה מבודדת</h1>
+    <p>הדף אינו מתחבר ל Supabase, אינו קורא נתוני אמת ואינו משנה ספרים קיימים.</p>
+    <div class="actions">
+      <button id="openTest" class="primary">הפעל בדיקת מסך אישור</button>
+      <button id="resetTest" class="ghost">איפוס</button>
+    </div>
+    <div id="result" class="result">טרם בוצעה בדיקה.</div>
+  </main>
+
+  <div id="localImportModal" class="overlay" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal">
+      <h2 id="modalTitle">ייבוא רשימה מקומית</h2>
+      <p>נמצאה במכשיר רשימה מקומית. שום ספר לא יועלה לענן בלי אישורך.</p>
+      <div class="field">
+        <div>ספרים שנמצאו במכשיר: <strong id="localFoundCount"></strong></div>
+        <div>ספרים חדשים שיועלו: <strong id="localAddCount"></strong></div>
+        <div>כפילויות שלא יועלו: <strong id="localDuplicateCount"></strong></div>
+      </div>
+      <p class="sub">ביטול ישאיר את הרשימה המקומית ללא שינוי ולא יעלה דבר לענן.</p>
+      <div class="actions">
+        <button id="confirmLocalImport" class="primary">אישור ייבוא</button>
+        <button id="cancelLocalImport" class="ghost">ביטול</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const localBooks = [
+      {title:'הסוד',author:'רונדה ברן',isbn:'9789655521141'},
+      {title:'הסוד',author:'רונדה ברן',isbn:'9789655521141'},
+      {title:'אנושות 2.0',author:'יובל דרור',isbn:''},
+      {title:'אהבה',author:'ליאו בוסקאליה',isbn:''}
+    ];
+    const remoteBooks = [
+      {title:'אהבה',author:'ליאו בוסקאליה',isbn:''}
+    ];
+    const normalize = value => String(value||'').toLowerCase().normalize('NFKD').replace(/[\u0591-\u05c7]/g,'').replace(/[^\u0590-\u05ffa-z0-9]/g,'');
+    function identity(book){
+      const isbn=String(book.isbn||'').replace(/[^0-9X]/gi,'').toUpperCase();
+      if(isbn)return 'isbn:'+isbn;
+      const title=normalize(book.title),author=normalize(book.author);
+      return author?'title-author:'+title+':'+author:'title:'+title;
+    }
+    function prepare(local,remote){
+      const remoteKeys=new Set(remote.map(identity));
+      const seen=new Set();
+      const candidates=[];
+      let duplicateCount=0;
+      for(const book of local){
+        const key=identity(book);
+        if(!key||remoteKeys.has(key)||seen.has(key)){duplicateCount++;continue;}
+        seen.add(key);candidates.push(book);
+      }
+      return {candidates,duplicateCount};
+    }
+    const modal=document.getElementById('localImportModal');
+    const result=document.getElementById('result');
+    let prepared=null;
+    document.getElementById('openTest').onclick=()=>{
+      prepared=prepare(localBooks,remoteBooks);
+      localFoundCount.textContent=localBooks.length;
+      localAddCount.textContent=prepared.candidates.length;
+      localDuplicateCount.textContent=prepared.duplicateCount;
+      modal.classList.add('open');
+      result.textContent='מסך האישור נפתח. נתוני הבדיקה בלבד מוצגים.';
+    };
+    document.getElementById('cancelLocalImport').onclick=()=>{
+      modal.classList.remove('open');
+      result.innerHTML='<span class="pass">עבר:</span> ביטול סגר את המסך. לא בוצעה כתיבה ולא השתנתה רשימת הבדיקה.';
+      document.body.dataset.testResult='cancel-pass';
+    };
+    document.getElementById('confirmLocalImport').onclick=()=>{
+      modal.classList.remove('open');
+      const titles=prepared.candidates.map(x=>x.title).join(', ');
+      result.innerHTML='<span class="pass">עבר:</span> האישור החזיר '+prepared.candidates.length+' מועמדים בלבד: '+titles+'. לא בוצעה כתיבה למסד.';
+      document.body.dataset.testResult='confirm-pass';
+    };
+    document.getElementById('resetTest').onclick=()=>{modal.classList.remove('open');result.textContent='טרם בוצעה בדיקה.';delete document.body.dataset.testResult;};
+  </script>
+</body>
+</html>
