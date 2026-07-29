@@ -55,6 +55,15 @@ test("manual import signature is loaded through a cache-busted loader", () => {
   assert.match(loader, /manual-import\.js\?v=local-import-signature-20260729-1/);
 });
 
+test("ISBN scanner loads pinned ZXing from two CDNs with fallback", () => {
+  const scanner = read("isbn-scanner.js");
+  assert.match(scanner, /unpkg\.com\/@zxing\/browser@0\.2\.1/);
+  assert.match(scanner, /cdn\.jsdelivr\.net\/npm\/@zxing\/browser@0\.2\.1/);
+  assert.match(scanner, /for \(const url of ZXING_URLS\)/);
+  assert.match(scanner, /BrowserMultiFormatReader/);
+  assert.match(scanner, /ensureZxingLoaded/);
+});
+
 test("all local script and stylesheet references exist", () => {
   for (const file of ["index.html", "isbn.html", "statistics.html", "prices.html", "notifications.html"]) {
     if (!fs.existsSync(path.join(root, file))) continue;
