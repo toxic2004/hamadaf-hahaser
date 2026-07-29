@@ -76,8 +76,6 @@ test("main workflow loads, edits, favorites, acquires and trashes without consol
     }
     upsert(row) {
       const rows = Array.isArray(row) ? row : [row];
-      if (rows.some((item) => Object.hasOwn(item, "priority")))
-        return Promise.resolve({ error: missingUpgrade });
       for (const item of rows) {
         const index = remoteBooks.findIndex((book) => book.id === item.id);
         if (index >= 0) remoteBooks[index] = { ...remoteBooks[index], ...item };
