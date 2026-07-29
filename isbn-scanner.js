@@ -97,17 +97,16 @@
     element("isbnScanner")?.classList.remove("open");
   }
 
-  async function acceptResult(result) {
-    if (!result || !scanning) return;
-    const detected = clean(result.getText());
-    if (!detected || detected === lastDecodedValue) return;
+  async function acceptDetectedValue(value) {
+    const detected = clean(value);
+    if (!detected || detected === lastDecodedValue) return false;
     lastDecodedValue = detected;
 
     if (!valid(detected)) {
       scannerMessage(
         `זוהה ברקוד ${detected}, אך הוא אינו ISBN תקין. כוון לברקוד שמתחיל בדרך כלל ב־978 או 979.`,
       );
-      return;
+      return false;
     }
 
     scannerMessage(`נמצא ISBN ${detected}. מאתר את פרטי הספר...`);
@@ -116,6 +115,12 @@
     element("isbnScanner")?.classList.remove("open");
     element("isbn").value = detected;
     if (typeof window.lookupBook === "function") await window.lookupBook();
+    return true;
+  }
+
+  async function acceptResult(result) {
+    if (!result || !scanning) return;
+    await acceptDetectedValue(result.getText());
   }
 
   function scannerHints() {
@@ -136,19 +141,107 @@
     return hints;
   }
 
-  function isRoutineDecodeMiss(error) {
-    const name = String(error?.name || error?.constructor?.name || "");
-    return /NotFoundException|ChecksumException|FormatException/.test(name);
+  function chooseRearCamera(devices) {
+    const videoDevices = devices.filter(
+      (device) => device.kind === "videoinput",
+    );
+    const rearDevices = videoDevices.filter((device) =>
+      /back|rear|environment|אחור/i.test(device.label || ""),
+    );
+    const preferred = rearDevices.find(
+      (device) => !/ultra[ -]?wide|0\.5|front/i.test(device.label || ""),
+    );
+    return (
+      preferred ||
+      rearDevices[0] ||
+      videoDevices[videoDevices.length - 1] ||
+      null
+    );
+  }
+
+  async function cameraConstraints() {
+    let selected = null;
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      selected = chooseRearCamera(devices);
+    } catch (error) {
+      console.warn("Could not enumerate cameras", error);
+    }
+
+    const video = {
+      facingMode: { ideal: "environment" },
+      width: { ideal: 1280 },
+      height: { ideal: 720 },
+    };
+    if (selected?.deviceId) video.deviceId = { exact: selected.deviceId };
+    return { audio: false, video };
+  }
+
+  function ensurePhotoFallback() {
+    const dialog = element("isbnScanner")?.querySelector(".scannerDialog");
+    if (!dialog || element("isbnPhotoInput")) return;
+
+    const input = document.createElement("input");
+    input.id = "isbnPhotoInput";
+    input.type = "file";
+    input.accept = "image/*";
+    input.capture = "environment";
+    input.hidden = true;
+
+    const button = document.createElement("button");
+    button.id = "scanIsbnPhoto";
+    button.type = "button";
+    button.className = "ghost";
+    button.textContent = "צילום ברקוד";
+    button.style.width = "100%";
+    button.style.marginTop = "10px";
+
+    button.addEventListener("click", () => input.click());
+    input.addEventListener("change", async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      scannerMessage("מפענח את צילום הברקוד...");
+      try {
+        await ensureZxingLoaded();
+        const reader = new window.ZXingBrowser.BrowserMultiFormatReader(
+          scannerHints(),
+        );
+        const imageUrl = URL.createObjectURL(file);
+        try {
+          const result = await reader.decodeFromImageUrl(imageUrl);
+          const accepted = await acceptDetectedValue(result.getText());
+          if (!accepted) {
+            scannerMessage(
+              "הצילום נקרא, אך לא נמצא בו ISBN תקין. נסה לצלם רק את הברקוד כשהוא חד וממלא את רוב התמונה.",
+            );
+          }
+        } finally {
+          URL.revokeObjectURL(imageUrl);
+        }
+      } catch (error) {
+        console.warn("ISBN photo decode failed", error);
+        scannerMessage(
+          "לא הצלחתי לקרוא את הברקוד מהצילום. נסה להתקרב מעט ולצלם כשהמספר והקווים חדים.",
+        );
+      } finally {
+        input.value = "";
+      }
+    });
+
+    dialog.append(input, button);
   }
 
   async function openScanner() {
     const modal = element("isbnScanner");
     const video = element("isbnVideo");
     modal.classList.add("open");
+    ensurePhotoFallback();
     scannerMessage("מכין את רכיב הסריקה...");
 
     if (!navigator.mediaDevices?.getUserMedia) {
-      scannerMessage("הדפדפן אינו מאפשר פתיחת מצלמה. אפשר להזין ISBN ידנית.");
+      scannerMessage(
+        "הדפדפן אינו מאפשר פתיחת מצלמה. אפשר להשתמש בצילום ברקוד.",
+      );
       return;
     }
 
@@ -172,26 +265,10 @@
         250,
       );
       const nextControls = await reader.decodeFromConstraints(
-        {
-          audio: false,
-          video: {
-            facingMode: { ideal: "environment" },
-            width: { ideal: 1920 },
-            height: { ideal: 1080 },
-          },
-        },
+        await cameraConstraints(),
         video,
-        (result, error) => {
-          if (result) {
-            void acceptResult(result);
-            return;
-          }
-          if (error && !isRoutineDecodeMiss(error)) {
-            console.warn("ISBN decode warning", error);
-            scannerMessage(
-              "המצלמה פעילה אך הפענוח נתקל בבעיה. נסה להרחיק מעט את הספר ולשפר את התאורה.",
-            );
-          }
+        (result) => {
+          if (result) void acceptResult(result);
         },
       );
       if (!scanning) {
@@ -200,19 +277,20 @@
       }
       controls = nextControls;
       scannerMessage(
-        "המצלמה פעילה. מקם את כל הברקוד בתוך התמונה, החזק יציב ושמור מרחק של כ־15–25 ס״מ.",
+        "המצלמה פעילה. מקם את כל הברקוד בתוך התמונה. אם אינו נקרא בתוך כמה שניות, לחץ על צילום ברקוד.",
       );
     } catch (error) {
       console.error("ISBN camera failed", error);
       stopScanner();
       scannerMessage(
-        "המצלמה לא נפתחה. בדוק את הרשאת המצלמה או הזן ISBN ידנית.",
+        "המצלמה לא נפתחה. בדוק את הרשאת המצלמה או השתמש בצילום ברקוד.",
       );
     }
   }
 
   function init() {
     const modal = element("isbnScanner");
+    ensurePhotoFallback();
     element("scanIsbn")?.addEventListener("click", openScanner);
     element("closeScanner")?.addEventListener("click", closeScanner);
     modal?.addEventListener("click", (event) => {
@@ -227,6 +305,7 @@
   window.HamadafIsbnScanner = {
     ensureZxingLoaded,
     hasZxing,
+    chooseRearCamera,
   };
 
   if (document.readyState === "loading") {
