@@ -15,7 +15,7 @@
     if (window.HamadafManualImport) return Promise.resolve();
     return new Promise(function (resolve, reject) {
       const script = document.createElement("script");
-      script.src = "./manual-import.js?v=signature-marker-20260729-1";
+      script.src = "./manual-import.js?v=local-import-signature-20260729-1";
       script.async = false;
       script.onload = resolve;
       script.onerror = reject;
