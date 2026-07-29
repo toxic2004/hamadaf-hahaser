@@ -1,0 +1,1 @@
+Trigger ISBN scanner page update.
