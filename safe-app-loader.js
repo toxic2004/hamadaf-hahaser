@@ -42,7 +42,7 @@
       };
       storageScript.onload = function () {
         const migrationScript = document.createElement('script');
-        migrationScript.src = './migrate-one-cover.js?v=all-covers-20260729-1';
+        migrationScript.src = './migrate-one-cover.js?v=all-covers-20260729-2';
         migrationScript.async = false;
         migrationScript.dataset.hamadafAllCoverMigration = 'true';
         migrationScript.onerror = function () {
