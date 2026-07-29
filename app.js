@@ -283,6 +283,7 @@ async function loadRemote() {
   const { data, error } = await db
     .from("books")
     .select("*")
+    .eq("user_id", state.user.id)
     .order("created_at", { ascending: false });
   if (error) {
     syncText.textContent = "שגיאת סנכרון";
@@ -355,7 +356,8 @@ async function selectCover(src) {
   let { error } = await db
     .from("books")
     .update({ cover: stored, updated_at: new Date().toISOString() })
-    .eq("id", b.id);
+    .eq("id", b.id)
+    .eq("user_id", state.user.id);
   if (error) {
     b.cover = "";
     return toast("שמירת הכריכה נכשלה");
@@ -707,7 +709,8 @@ async function toggleFavorite(bookId) {
       is_favorite: book.isFavorite,
       updated_at: new Date().toISOString(),
     })
-    .eq("id", book.id);
+    .eq("id", book.id)
+    .eq("user_id", state.user.id);
   if (error) {
     book.isFavorite = previous;
     render();
@@ -748,13 +751,15 @@ async function moveBook(status) {
         : null,
       updated_at: new Date().toISOString(),
     })
-    .eq("id", state.selected.id);
+    .eq("id", state.selected.id)
+    .eq("user_id", state.user.id);
   let legacyMode = false;
   if (isMissingUpgrade(error)) {
     const fallback = await db
       .from("books")
       .update({ status, updated_at: new Date().toISOString() })
-      .eq("id", state.selected.id);
+      .eq("id", state.selected.id)
+      .eq("user_id", state.user.id);
     error = fallback.error;
     legacyMode = !error;
   }
