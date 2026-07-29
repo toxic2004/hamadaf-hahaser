@@ -142,14 +142,21 @@
   }
 
   function chooseRearCamera(devices) {
-    const videoDevices = devices.filter((device) => device.kind === "videoinput");
+    const videoDevices = devices.filter(
+      (device) => device.kind === "videoinput",
+    );
     const rearDevices = videoDevices.filter((device) =>
       /back|rear|environment|אחור/i.test(device.label || ""),
     );
     const preferred = rearDevices.find(
       (device) => !/ultra[ -]?wide|0\.5|front/i.test(device.label || ""),
     );
-    return preferred || rearDevices[0] || videoDevices[videoDevices.length - 1] || null;
+    return (
+      preferred ||
+      rearDevices[0] ||
+      videoDevices[videoDevices.length - 1] ||
+      null
+    );
   }
 
   async function cameraConstraints() {
@@ -232,7 +239,9 @@
     scannerMessage("מכין את רכיב הסריקה...");
 
     if (!navigator.mediaDevices?.getUserMedia) {
-      scannerMessage("הדפדפן אינו מאפשר פתיחת מצלמה. אפשר להשתמש בצילום ברקוד.");
+      scannerMessage(
+        "הדפדפן אינו מאפשר פתיחת מצלמה. אפשר להשתמש בצילום ברקוד.",
+      );
       return;
     }
 
