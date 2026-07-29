@@ -1,0 +1,87 @@
+name: Apply issue 10 user scope filters
+
+on:
+  push:
+    paths:
+      - ".github/workflows/issue-10-user-scope.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  apply-user-scope:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Add explicit user filters to client book queries
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("app.js")
+          source = path.read_text(encoding="utf-8")
+
+          replacements = [
+              (
+                  '.select("*")\n    .order("created_at", { ascending: false });',
+                  '.select("*")\n    .eq("user_id", state.user.id)\n    .order("created_at", { ascending: false });',
+              ),
+              (
+                  '.update({ cover: stored, updated_at: new Date().toISOString() })\n    .eq("id", b.id);',
+                  '.update({ cover: stored, updated_at: new Date().toISOString() })\n    .eq("id", b.id)\n    .eq("user_id", state.user.id);',
+              ),
+              (
+                  '    })\n    .eq("id", book.id);',
+                  '    })\n    .eq("id", book.id)\n    .eq("user_id", state.user.id);',
+              ),
+              (
+                  '    })\n    .eq("id", state.selected.id);',
+                  '    })\n    .eq("id", state.selected.id)\n    .eq("user_id", state.user.id);',
+              ),
+              (
+                  '.update({ status, updated_at: new Date().toISOString() })\n      .eq("id", state.selected.id);',
+                  '.update({ status, updated_at: new Date().toISOString() })\n      .eq("id", state.selected.id)\n      .eq("user_id", state.user.id);',
+              ),
+          ]
+
+          for old, new in replacements:
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f"Expected exactly one match, found {count}: {old!r}")
+              source = source.replace(old, new, 1)
+
+          path.write_text(source, encoding="utf-8")
+
+      - name: Verify expected filters
+        shell: python
+        run: |
+          from pathlib import Path
+          source = Path("app.js").read_text(encoding="utf-8")
+          expected = [
+              '.select("*")\n    .eq("user_id", state.user.id)',
+              '.eq("id", b.id)\n    .eq("user_id", state.user.id)',
+              '.eq("id", book.id)\n    .eq("user_id", state.user.id)',
+              '.eq("id", state.selected.id)\n    .eq("user_id", state.user.id)',
+              '.eq("id", state.selected.id)\n      .eq("user_id", state.user.id)',
+          ]
+          missing = [item for item in expected if item not in source]
+          if missing:
+              raise SystemExit(f"Missing expected filters: {missing}")
+
+      - name: Run project checks
+        run: |
+          npm ci
+          npm run format:check
+          npm run lint
+          npm run typecheck
+          npm test
+          npm run build
+
+      - name: Commit issue 10 fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app.js
+          git commit -m "security: scope client book queries to current user"
+          git push
