@@ -89,11 +89,16 @@ test("main workflow loads, edits, favorites, acquires and trashes without consol
     }
     eq(column, value) {
       if (this.patch) {
-        if (Object.hasOwn(this.patch, "acquired_at"))
-          return Promise.resolve({ error: missingUpgrade });
-        const book = remoteBooks.find((item) => item[column] === value);
-        if (book) Object.assign(book, this.patch);
-        return Promise.resolve({ error: null });
+        const error = Object.hasOwn(this.patch, "acquired_at")
+          ? missingUpgrade
+          : null;
+        if (!error) {
+          const book = remoteBooks.find((item) => item[column] === value);
+          if (book) Object.assign(book, this.patch);
+        }
+        return {
+          eq: () => Promise.resolve({ error }),
+        };
       }
       return this;
     }
