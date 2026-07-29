@@ -1,6 +1,4 @@
-(async function migrateOneLegacyCover() {
-  const TARGET_BOOK_ID = "b6b1bb06-dfcf-459e-a1cd-bbc58897dd87";
-  const TARGET_BOOK_TITLE = "עץ החיים והכסף";
+(async function migrateAllLegacyCovers() {
   const BUCKET = "book-covers";
 
   if (!window.db || !window.state || !window.state.user) return;
@@ -12,7 +10,9 @@
     const mime = mimeMatch ? mimeMatch[1] : "image/jpeg";
     const decoded = atob(parts[1]);
     const bytes = new Uint8Array(decoded.length);
-    for (let i = 0; i < decoded.length; i += 1) bytes[i] = decoded.charCodeAt(i);
+    for (let i = 0; i < decoded.length; i += 1) {
+      bytes[i] = decoded.charCodeAt(i);
+    }
     return { bytes, mime };
   }
 
@@ -22,57 +22,83 @@
     return "jpg";
   }
 
-  let uploadedPath = "";
+  const { data: rows, error: readError } = await window.db
+    .from("books")
+    .select("id,title,cover,cover_path")
+    .is("cover_path", null);
 
-  try {
-    const { data: row, error: readError } = await window.db
-      .from("books")
-      .select("id,title,cover,cover_path")
-      .eq("id", TARGET_BOOK_ID)
-      .maybeSingle();
+  if (readError) {
+    console.error("Legacy cover migration read failed", readError);
+    return;
+  }
 
-    if (readError) throw readError;
-    if (!row || row.cover_path || !String(row.cover || "").startsWith("data:image/")) return;
+  const candidates = (rows || []).filter((row) =>
+    String(row.cover || "").startsWith("data:image/"),
+  );
 
-    const converted = dataUrlToBytes(row.cover);
-    uploadedPath =
-      window.state.user.id +
-      "/" +
-      TARGET_BOOK_ID +
-      "/legacy-migration-" +
-      Date.now() +
-      "." +
-      extensionFor(converted.mime);
+  if (!candidates.length) return;
 
-    const { error: uploadError } = await window.db.storage
-      .from(BUCKET)
-      .upload(uploadedPath, converted.bytes, {
-        contentType: converted.mime,
-        cacheControl: "3600",
-        upsert: false,
-      });
-    if (uploadError) throw uploadError;
+  let migrated = 0;
+  let failed = 0;
 
-    const { error: updateError } = await window.db
-      .from("books")
-      .update({ cover_path: uploadedPath, updated_at: new Date().toISOString() })
-      .eq("id", TARGET_BOOK_ID)
-      .is("cover_path", null);
-    if (updateError) throw updateError;
+  if (typeof window.toast === "function") {
+    window.toast("מעביר " + candidates.length + " כריכות ל-Storage...");
+  }
 
-    const localBook = window.state.books.find((book) => book.id === TARGET_BOOK_ID);
-    if (localBook) localBook.coverPath = uploadedPath;
+  for (const row of candidates) {
+    let uploadedPath = "";
 
-    if (typeof window.toast === "function") {
-      window.toast("הכריכה של ״" + TARGET_BOOK_TITLE + "״ הועברה ל-Storage");
+    try {
+      const converted = dataUrlToBytes(row.cover);
+      uploadedPath =
+        window.state.user.id +
+        "/" +
+        row.id +
+        "/legacy-migration-" +
+        Date.now() +
+        "." +
+        extensionFor(converted.mime);
+
+      const { error: uploadError } = await window.db.storage
+        .from(BUCKET)
+        .upload(uploadedPath, converted.bytes, {
+          contentType: converted.mime,
+          cacheControl: "3600",
+          upsert: false,
+        });
+      if (uploadError) throw uploadError;
+
+      const { data: updatedRows, error: updateError } = await window.db
+        .from("books")
+        .update({
+          cover_path: uploadedPath,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", row.id)
+        .is("cover_path", null)
+        .select("id");
+      if (updateError) throw updateError;
+      if (!updatedRows || updatedRows.length !== 1) {
+        throw new Error("Book was not updated");
+      }
+
+      const localBook = window.state.books.find((book) => book.id === row.id);
+      if (localBook) localBook.coverPath = uploadedPath;
+      migrated += 1;
+    } catch (error) {
+      failed += 1;
+      console.error("Legacy cover migration failed", row.id, row.title, error);
+      if (uploadedPath) {
+        await window.db.storage.from(BUCKET).remove([uploadedPath]);
+      }
     }
-  } catch (error) {
-    console.error("Single legacy cover migration failed", error);
-    if (uploadedPath) {
-      await window.db.storage.from(BUCKET).remove([uploadedPath]);
-    }
-    if (typeof window.toast === "function") {
-      window.toast("העברת כריכת המבחן נכשלה. הנתון הישן נשאר ללא שינוי");
-    }
+  }
+
+  if (typeof window.toast === "function") {
+    window.toast(
+      failed
+        ? "הועברו " + migrated + " כריכות. " + failed + " נכשלו ונשארו ללא שינוי"
+        : "כל " + migrated + " הכריכות הועברו ל-Storage",
+    );
   }
 })();
