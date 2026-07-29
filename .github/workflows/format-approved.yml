@@ -3,7 +3,7 @@ name: Format approved files
 on:
   push:
     branches:
-      - fix/prettier-approved
+      - main
 
 permissions:
   contents: write
