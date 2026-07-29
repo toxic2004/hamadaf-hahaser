@@ -137,9 +137,7 @@
   }
 
   function isRoutineDecodeMiss(error) {
-    const name = String(
-      error?.name || error?.constructor?.name || "",
-    );
+    const name = String(error?.name || error?.constructor?.name || "");
     return /NotFoundException|ChecksumException|FormatException/.test(name);
   }
 
