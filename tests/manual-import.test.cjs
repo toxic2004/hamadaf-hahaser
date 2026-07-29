@@ -5,10 +5,12 @@ const path = require("node:path");
 const { JSDOM } = require("jsdom");
 
 const root = path.resolve(__dirname, "..");
+const signatureKey = "hamadaf-local-import-signature-v1";
 
 function loadModule() {
   const dom = new JSDOM("<!doctype html><body></body>", {
     runScripts: "outside-only",
+    url: "https://example.test/",
   });
   dom.window.eval(fs.readFileSync(path.join(root, "manual-import.js"), "utf8"));
   return { dom, api: dom.window.HamadafManualImport };
@@ -76,9 +78,13 @@ test("empty cloud requires explicit confirmation before importing", async () => 
   assert.equal(result.status, "completed");
   assert.equal(db.calls.length, 1);
   assert.equal(imported.length, 1);
+  assert.equal(
+    dom.window.localStorage.getItem(signatureKey),
+    api.listSignature(localBooks),
+  );
 });
 
-test("temporary Supabase write failure does not change local display", async () => {
+test("temporary Supabase write failure does not change local display or store signature", async () => {
   const { dom, api } = loadModule();
   const db = makeDb({ error: { message: "temporary network failure" } });
   let changed = false;
@@ -98,6 +104,7 @@ test("temporary Supabase write failure does not change local display", async () 
   const result = await pending;
   assert.equal(result.status, "failed");
   assert.equal(changed, false);
+  assert.equal(dom.window.localStorage.getItem(signatureKey), null);
   assert.equal(
     dom.window.document.getElementById("localImportModal").classList.contains("open"),
     true,
@@ -130,7 +137,7 @@ test("old local list is parsed and shown for confirmation", () => {
   assert.equal(parsed[0].title, "ספר מגרסה קודמת");
 });
 
-test("cancel closes the dialog without writing to Supabase", async () => {
+test("cancel closes the dialog without writing or storing signature", async () => {
   const { dom, api } = loadModule();
   const db = makeDb({ error: null });
   const pending = startPrompt({
@@ -146,6 +153,7 @@ test("cancel closes the dialog without writing to Supabase", async () => {
   const result = await pending;
   assert.equal(result.status, "cancelled");
   assert.equal(db.calls.length, 0);
+  assert.equal(dom.window.localStorage.getItem(signatureKey), null);
   assert.equal(
     dom.window.document.getElementById("localImportModal").classList.contains("open"),
     false,
@@ -180,4 +188,71 @@ test("duplicates are excluded and only new books are written", async () => {
   assert.equal(result.analysis.newCount, 2);
   assert.equal(db.calls.length, 1);
   assert.equal(db.calls[0].length, 2);
+});
+
+test("approved list with no new books stores signature and does not write", async () => {
+  const { dom, api } = loadModule();
+  const db = makeDb({ error: null });
+  const localBooks = [book("ספר קיים", "מחבר")];
+  const pending = startPrompt({
+    dom,
+    api,
+    db,
+    user: { id: "user-1" },
+    localBooks,
+    remoteBooks: [book("ספר קיים", "מחבר")],
+  });
+
+  dom.window.document.getElementById("confirmLocalImport").click();
+  const result = await pending;
+  assert.equal(result.status, "completed");
+  assert.equal(result.imported, 0);
+  assert.equal(db.calls.length, 0);
+  assert.equal(
+    dom.window.localStorage.getItem(signatureKey),
+    api.listSignature(localBooks),
+  );
+});
+
+test("same reviewed local list does not reopen import dialog", async () => {
+  const { dom, api } = loadModule();
+  const db = makeDb({ error: null });
+  const localBooks = [book("ספר קיים", "מחבר")];
+  dom.window.localStorage.setItem(signatureKey, api.listSignature(localBooks));
+
+  const result = await startPrompt({
+    dom,
+    api,
+    db,
+    user: { id: "user-1" },
+    localBooks,
+    remoteBooks: [book("ספר קיים", "מחבר")],
+  });
+
+  assert.equal(result.status, "not-needed");
+  assert.equal(result.reason, "already-reviewed");
+  assert.equal(db.calls.length, 0);
+  assert.equal(dom.window.document.getElementById("localImportModal"), null);
+});
+
+test("changed local list receives a new review even when an older signature exists", async () => {
+  const { dom, api } = loadModule();
+  const db = makeDb({ error: null });
+  const oldBooks = [book("ספר ישן", "מחבר")];
+  const changedBooks = [book("ספר ישן", "מחבר"), book("ספר חדש", "מחבר אחר")];
+  dom.window.localStorage.setItem(signatureKey, api.listSignature(oldBooks));
+
+  const pending = startPrompt({
+    dom,
+    api,
+    db,
+    user: { id: "user-1" },
+    localBooks: changedBooks,
+    remoteBooks: [book("ספר ישן", "מחבר")],
+  });
+
+  assert.ok(dom.window.document.getElementById("localImportModal"));
+  dom.window.document.getElementById("cancelLocalImport").click();
+  const result = await pending;
+  assert.equal(result.status, "cancelled");
 });
