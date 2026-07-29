@@ -3,6 +3,7 @@
 
   const BUCKET = "book-covers";
   const PATH_PREFIX = "storage-path:";
+  const UPLOAD_TIMEOUT_MS = 20000;
   const originalRowToBook = rowToBook;
   const originalBookToRow = bookToRow;
   const originalLoadRemote = loadRemote;
@@ -19,39 +20,65 @@
       : "";
   }
 
-  function dataUrlToBlob(dataUrl) {
+  function dataUrlToBytes(dataUrl) {
     const parts = String(dataUrl).split(",");
     if (parts.length !== 2) throw new Error("Invalid image data");
     const mimeMatch = parts[0].match(/data:([^;]+);base64/i);
     const mime = mimeMatch ? mimeMatch[1] : "image/jpeg";
-    const bytes = atob(parts[1]);
-    const array = new Uint8Array(bytes.length);
-    for (let i = 0; i < bytes.length; i += 1) array[i] = bytes.charCodeAt(i);
-    return new Blob([array], { type: mime });
+    const decoded = atob(parts[1]);
+    const bytes = new Uint8Array(decoded.length);
+    for (let i = 0; i < decoded.length; i += 1) {
+      bytes[i] = decoded.charCodeAt(i);
+    }
+    return { bytes, mime };
   }
 
-  function extensionFor(blob) {
-    if (blob.type === "image/png") return "png";
-    if (blob.type === "image/webp") return "webp";
+  function extensionFor(mime) {
+    if (mime === "image/png") return "png";
+    if (mime === "image/webp") return "webp";
     return "jpg";
   }
 
+  function withTimeout(promise, milliseconds, message) {
+    let timer;
+    const timeout = new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(message)), milliseconds);
+    });
+    return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+  }
+
+  async function requireActiveUser() {
+    const { data, error } = await db.auth.getSession();
+    if (error) throw error;
+    const user = data && data.session && data.session.user;
+    if (!user || !state.user || user.id !== state.user.id) {
+      throw new Error("Not signed in");
+    }
+    return user;
+  }
+
   async function uploadDataUrl(dataUrl, bookId) {
-    if (!state.user) throw new Error("Not signed in");
-    const blob = dataUrlToBlob(dataUrl);
+    const user = await requireActiveUser();
+    const converted = dataUrlToBytes(dataUrl);
     const path =
-      state.user.id +
+      user.id +
       "/" +
       bookId +
       "/" +
       Date.now() +
       "." +
-      extensionFor(blob);
-    const { error } = await db.storage.from(BUCKET).upload(path, blob, {
-      contentType: blob.type,
+      extensionFor(converted.mime);
+
+    const upload = db.storage.from(BUCKET).upload(path, converted.bytes, {
+      contentType: converted.mime,
       cacheControl: "3600",
       upsert: false,
     });
+    const { error } = await withTimeout(
+      upload,
+      UPLOAD_TIMEOUT_MS,
+      "Cover upload timed out",
+    );
     if (error) throw error;
     return path;
   }
@@ -143,7 +170,11 @@
       }
       save.disabled = false;
       save.textContent = "שמירה";
-      toast("שמירת הכריכה נכשלה. הספר לא שונה");
+      toast(
+        error && error.message === "Cover upload timed out"
+          ? "העלאת הכריכה ארכה יותר מדי. נסה שוב"
+          : "שמירת הכריכה נכשלה. הספר לא שונה",
+      );
     }
   };
 
@@ -182,7 +213,11 @@
     } catch (error) {
       console.error("Cover selection upload failed", error);
       if (path) await db.storage.from(BUCKET).remove([path]);
-      toast("שמירת הכריכה נכשלה. הכריכה הקודמת נשארה ללא שינוי");
+      toast(
+        error && error.message === "Cover upload timed out"
+          ? "העלאת הכריכה ארכה יותר מדי. נסה שוב"
+          : "שמירת הכריכה נכשלה. הכריכה הקודמת נשארה ללא שינוי",
+      );
     }
   };
 
