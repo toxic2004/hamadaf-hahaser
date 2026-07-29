@@ -95,8 +95,9 @@ test("main workflow loads, edits, favorites, acquires and trashes without consol
           return Promise.resolve({ error: missingUpgrade });
         const book = remoteBooks.find((item) => item[column] === value);
         if (book) Object.assign(book, this.patch);
+        return Promise.resolve({ error: null });
       }
-      return Promise.resolve({ error: null });
+      return this;
     }
   }
 
