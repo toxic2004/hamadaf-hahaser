@@ -40,6 +40,16 @@
       storageScript.onerror = function () {
         showLoadError('רכיב שמירת הכריכות לא נטען. נסה לרענן את הדף');
       };
+      storageScript.onload = function () {
+        const migrationScript = document.createElement('script');
+        migrationScript.src = './migrate-one-cover.js?v=single-test-20260729-1';
+        migrationScript.async = false;
+        migrationScript.dataset.hamadafSingleCoverMigration = 'true';
+        migrationScript.onerror = function () {
+          console.error('Single cover migration script failed to load');
+        };
+        document.head.appendChild(migrationScript);
+      };
       document.head.appendChild(storageScript);
     })
     .catch(function (error) {
