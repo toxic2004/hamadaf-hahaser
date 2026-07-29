@@ -129,13 +129,17 @@
       api.BarcodeFormat.UPC_E,
       api.BarcodeFormat.CODE_128,
     ].filter((format) => format !== undefined);
-    if (formats.length) hints.set(api.DecodeHintType.POSSIBLE_FORMATS, formats);
+    if (formats.length) {
+      hints.set(api.DecodeHintType.POSSIBLE_FORMATS, formats);
+    }
     hints.set(api.DecodeHintType.TRY_HARDER, true);
     return hints;
   }
 
   function isRoutineDecodeMiss(error) {
-    const name = String(error?.name || error?.constructor?.name || "");
+    const name = String(
+      error?.name || error?.constructor?.name || "",
+    );
     return /NotFoundException|ChecksumException|FormatException/.test(name);
   }
 
