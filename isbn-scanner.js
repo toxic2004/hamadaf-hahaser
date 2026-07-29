@@ -1,8 +1,14 @@
 (function () {
   "use strict";
 
+  const ZXING_URLS = [
+    "https://unpkg.com/@zxing/browser@0.2.1",
+    "https://cdn.jsdelivr.net/npm/@zxing/browser@0.2.1",
+  ];
+
   let controls = null;
   let scanning = false;
+  let zxingLoadPromise = null;
 
   const element = (id) => document.getElementById(id);
 
@@ -21,6 +27,54 @@
 
   function valid(value) {
     return Boolean(window.HamadafIsbn?.isValidIsbn(value));
+  }
+
+  function hasZxing() {
+    return Boolean(window.ZXingBrowser?.BrowserMultiFormatReader);
+  }
+
+  function loadScript(url) {
+    return new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = url;
+      script.async = true;
+      script.dataset.hamadafZxing = "true";
+      script.onload = () => {
+        if (hasZxing()) resolve();
+        else {
+          script.remove();
+          reject(new Error("ZXing loaded without BrowserMultiFormatReader"));
+        }
+      };
+      script.onerror = () => {
+        script.remove();
+        reject(new Error("ZXing CDN failed: " + url));
+      };
+      document.head.appendChild(script);
+    });
+  }
+
+  async function ensureZxingLoaded() {
+    if (hasZxing()) return;
+    if (!zxingLoadPromise) {
+      zxingLoadPromise = (async () => {
+        let lastError = null;
+        for (const url of ZXING_URLS) {
+          try {
+            await loadScript(url);
+            return;
+          } catch (error) {
+            lastError = error;
+            console.warn("ISBN scanner CDN failed", url, error);
+          }
+        }
+        throw lastError || new Error("ZXing could not be loaded");
+      })().catch((error) => {
+        zxingLoadPromise = null;
+        throw error;
+      });
+    }
+    await zxingLoadPromise;
   }
 
   function stopScanner() {
@@ -56,19 +110,26 @@
     const modal = element("isbnScanner");
     const video = element("isbnVideo");
     modal.classList.add("open");
-    scannerMessage("פותח את המצלמה...");
+    scannerMessage("מכין את רכיב הסריקה...");
 
     if (!navigator.mediaDevices?.getUserMedia) {
       scannerMessage("הדפדפן אינו מאפשר פתיחת מצלמה. אפשר להזין ISBN ידנית.");
       return;
     }
-    if (!window.ZXingBrowser?.BrowserMultiFormatReader) {
-      scannerMessage("רכיב הסריקה לא נטען. אפשר להזין ISBN ידנית.");
+
+    try {
+      await ensureZxingLoaded();
+    } catch (error) {
+      console.error("ISBN scanner library failed", error);
+      scannerMessage(
+        "רכיב הסריקה לא נטען. בדוק את החיבור, רענן את הדף ונסה שוב.",
+      );
       return;
     }
 
     stopScanner();
     scanning = true;
+    scannerMessage("פותח את המצלמה...");
     try {
       const reader = new window.ZXingBrowser.BrowserMultiFormatReader();
       const nextControls = await reader.decodeFromConstraints(
@@ -112,6 +173,11 @@
     });
     window.addEventListener("pagehide", stopScanner);
   }
+
+  window.HamadafIsbnScanner = {
+    ensureZxingLoaded,
+    hasZxing,
+  };
 
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", init, { once: true });
