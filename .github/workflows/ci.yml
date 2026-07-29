@@ -18,6 +18,13 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
+      - name: Produce exact ISBN scanner formatting
+        run: |
+          npx prettier --write isbn-scanner.js
+          echo "FORMATTED_ISBN_SCANNER_BEGIN"
+          base64 -w0 isbn-scanner.js
+          echo
+          echo "FORMATTED_ISBN_SCANNER_END"
       - run: npm run format:check
       - run: npm run lint
       - run: npm run typecheck
