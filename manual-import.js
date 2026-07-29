@@ -36,7 +36,9 @@
     if (isbn) return "isbn:" + isbn;
     const title = normalize(book && book.title);
     const author = normalize(book && book.author);
-    return author ? "title-author:" + title + ":" + author : "title:" + title;
+    return author
+      ? "title-author:" + title + ":" + author
+      : "title:" + title;
   }
 
   function analyze(localBooks, remoteBooks) {
@@ -136,7 +138,9 @@
     if (!confirmed) return { status: "cancelled", imported: 0, analysis };
 
     if (!analysis.newBooks.length) {
-      document.getElementById("localImportModal").classList.remove("open");
+      document
+        .getElementById("localImportModal")
+        .classList.remove("open");
       return { status: "completed", imported: 0, analysis };
     }
 
