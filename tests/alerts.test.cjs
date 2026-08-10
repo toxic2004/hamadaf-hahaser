@@ -18,6 +18,17 @@ test("scheduled alerts respect each user's configured hours", () => {
   assert.match(source, /scheduledKinds\(settings, local\.hour\)/);
 });
 
+test("missing settings default to reports at 07:00 and 21:00", () => {
+  const source = fs.readFileSync(
+    path.join(root, "supabase/functions/alerts/index.ts"),
+    "utf8",
+  );
+
+  assert.match(source, /morning_report_hour: 7/);
+  assert.match(source, /evening_check_hour: 21/);
+  assert.doesNotMatch(source, /evening_check_hour: 19/);
+});
+
 test("Jerusalem time handles winter and summer offsets", async () => {
   const { jerusalemParts } = await core();
   assert.deepEqual(jerusalemParts(new Date("2026-01-15T05:00:00Z")), {
@@ -123,15 +134,17 @@ test("alert endpoint limits and validates incoming requests", () => {
   );
 });
 
-test("email requests time out and database failures are not ignored", () => {
+test("database failures are not ignored and Gmail stays the only delivery path", () => {
   const source = fs.readFileSync(
     path.join(root, "supabase/functions/alerts/index.ts"),
     "utf8",
   );
-  assert.match(source, /AbortSignal\.timeout\(10_000\)/);
   assert.match(source, /if \(snapshot\.error\) throw snapshot\.error/);
+  assert.match(source, /if \(reportRun\.error\) throw reportRun\.error/);
   assert.match(source, /if \(completed\.error\) throw completed\.error/);
   assert.match(source, /if \(reschedule\.error\) throw reschedule\.error/);
+  assert.match(source, /emailDelivery: "gmail_queue"/);
+  assert.doesNotMatch(source, /RESEND_API_KEY|api\.resend\.com/);
 });
 
 test("JSON responses prevent caching and MIME sniffing", () => {
@@ -143,13 +156,14 @@ test("JSON responses prevent caching and MIME sniffing", () => {
   assert.match(source, /"x-content-type-options": "nosniff"/);
 });
 
-test("email delivery failures are surfaced for safe handling", async () => {
-  const { assertEmailAccepted } = await core();
-  assert.doesNotThrow(() => assertEmailAccepted({ ok: true, status: 200 }));
-  assert.throws(
-    () => assertEmailAccepted({ ok: false, status: 503 }),
-    /Email failed with 503/,
+test("scheduled runs open a complete report coverage matrix", () => {
+  const source = fs.readFileSync(
+    path.join(root, "supabase/functions/alerts/index.ts"),
+    "utf8",
   );
+  assert.match(source, /start_report_run_for_user/);
+  assert.match(source, /expected_checks/);
+  assert.match(source, /report_run_id/);
 });
 
 test("GitHub alert workflow is a manual fallback", () => {

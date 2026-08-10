@@ -35,6 +35,7 @@
       const { data: rows, error: readError } = await window.db
         .from("books")
         .select("id,title,cover,cover_path")
+        .eq("user_id", window.state.user.id)
         .is("cover_path", null);
 
       if (readError) throw readError;
@@ -85,6 +86,7 @@
               updated_at: new Date().toISOString(),
             })
             .eq("id", row.id)
+            .eq("user_id", window.state.user.id)
             .is("cover_path", null)
             .select("id");
 

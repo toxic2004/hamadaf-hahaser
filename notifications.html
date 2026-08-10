@@ -32,12 +32,13 @@
         </div>
         <nav class="sourceLinks">
           <a href="prices.html">השוואת מחירים</a><a href="./">חזרה למדף</a>
+          <a href="report.html">הדוח המקצועי</a>
         </nav>
       </header>
       <div class="notice">
         התראות בתוך המערכת פעילות לאחר הפעלת מיגרציית המחירים. בדיקות מתוזמנות
-        ומייל יפעלו רק לאחר פריסת פונקציית Supabase והגדרת הסודות המתועדים
-        במאגר. אין חיבור ל ChatGPT.
+        ומייל יפעלו רק לאחר פריסת פונקציית Supabase וחיבור משימת Gmail. אין
+        חיבור ל ChatGPT ואין שימוש בשירות מייל נוסף.
       </div>
       <div id="error" class="error hidden"></div>
       <div class="panels">
@@ -73,8 +74,8 @@
             />
           </div>
           <label class="check"
-            ><input id="emailEnabled" type="checkbox" /> שליחת מייל לאחר חיבור
-            שירות המייל</label
+            ><input id="emailEnabled" type="checkbox" /> שליחת מייל דרך
+            Gmail</label
           >
           <div class="field">
             <label for="notificationEmail">כתובת לקבלת מייל</label
@@ -97,7 +98,7 @@
         </article>
       </div>
     </main>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.110.9"></script>
     <script src="./supabase-client.js"></script>
     <script src="./notifications.js"></script>
   </body>

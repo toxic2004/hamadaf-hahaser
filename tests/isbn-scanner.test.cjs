@@ -15,7 +15,10 @@ test("camera scan fills a valid ISBN and continues to confirmation", async () =>
   let lookedUp = false;
   let stopped = false;
   Object.defineProperty(window.navigator, "mediaDevices", {
-    value: { getUserMedia() {} },
+    value: {
+      getUserMedia() {},
+      enumerateDevices: async () => [],
+    },
     configurable: true,
   });
   window.HamadafIsbn = {

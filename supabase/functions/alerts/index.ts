@@ -1,6 +1,5 @@
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { createClient } from "npm:@supabase/supabase-js@2.110.9";
 import {
-  assertEmailAccepted,
   dealDedupeKey,
   dealTotal,
   isUuid,
@@ -14,9 +13,6 @@ import {
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") || "";
-const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY") || "";
-const EMAIL_FROM =
-  Deno.env.get("ALERTS_EMAIL_FROM") || "המדף החסר <onboarding@resend.dev>";
 const MAX_BODY_BYTES = 16_384;
 let serviceClient: ReturnType<typeof createClient> | null = null;
 
@@ -75,7 +71,7 @@ async function settingsFor(userId: string) {
       user_id: userId,
       timezone: "Asia/Jerusalem",
       morning_report_hour: 7,
-      evening_check_hour: 19,
+      evening_check_hour: 21,
       immediate_deal_threshold: 70,
       email_enabled: false,
       email_address: null,
@@ -96,6 +92,7 @@ async function priceDropNotification(offer: Record<string, any>) {
   const { data, error } = await service()
     .from("price_history")
     .select("total_price,captured_on")
+    .eq("user_id", offer.user_id)
     .eq("offer_id", offer.id)
     .not("total_price", "is", null)
     .order("captured_on", { ascending: false })
@@ -140,72 +137,6 @@ async function dealNotification(offer: Record<string, any>, threshold: number) {
   });
 }
 
-function escapeHtml(value: unknown) {
-  return String(value || "").replace(
-    /[&<>"']/g,
-    (char) =>
-      ({
-        "&": "&amp;",
-        "<": "&lt;",
-        ">": "&gt;",
-        '"': "&quot;",
-        "'": "&#39;",
-      })[char] || char,
-  );
-}
-
-async function emailNotifications(
-  userId: string,
-  notifications: Record<string, any>[],
-) {
-  if (!notifications.length) return 0;
-  const settings = await settingsFor(userId);
-  if (!settings.email_enabled || !settings.email_address) return 0;
-  // When Resend is not configured, leave the notifications pending. The
-  // connected Gmail delivery task will send them and set emailed_at.
-  if (!RESEND_API_KEY) return 0;
-  const response = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${RESEND_API_KEY}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      from: EMAIL_FROM,
-      to: [settings.email_address],
-      subject:
-        notifications.length === 1
-          ? notifications[0].title
-          : `המדף החסר: ${notifications.length} התראות`,
-      html: `<div dir="rtl" style="font-family:Arial,sans-serif">${notifications.map((item) => `<h2>${escapeHtml(item.title)}</h2><p>${escapeHtml(item.body)}</p>`).join("")}</div>`,
-    }),
-    signal: AbortSignal.timeout(10_000),
-  });
-  assertEmailAccepted(response);
-  const notificationIds = notifications
-    .map((item) => item.id)
-    .filter((id) => isUuid(id));
-  if (!notificationIds.length) return 0;
-  const { error } = await service()
-    .from("notifications")
-    .update({ emailed_at: new Date().toISOString() })
-    .in("id", notificationIds);
-  if (error) throw error;
-  return notificationIds.length;
-}
-
-async function emailPendingNotifications(userId: string) {
-  const { data, error } = await service()
-    .from("notifications")
-    .select("*")
-    .eq("user_id", userId)
-    .is("emailed_at", null)
-    .order("created_at", { ascending: true })
-    .limit(100);
-  if (error) throw error;
-  return emailNotifications(userId, data || []);
-}
-
 async function processOfferMode(request: Request, body: Record<string, any>) {
   const authorization = request.headers.get("authorization") || "";
   if (!authorization.toLowerCase().startsWith("bearer "))
@@ -234,15 +165,11 @@ async function processOfferMode(request: Request, body: Record<string, any>) {
     ),
     await priceDropNotification(offer),
   ].filter(Boolean) as Record<string, any>[];
-  let emailError = false;
-  let emailed = 0;
-  try {
-    emailed = await emailPendingNotifications(authData.user.id);
-  } catch (error) {
-    emailError = true;
-    console.error("Immediate email delivery failed", error);
-  }
-  return json({ ok: true, created: created.length, emailed, emailError });
+  return json({
+    ok: true,
+    created: created.length,
+    emailDelivery: "gmail_queue",
+  });
 }
 
 async function processScheduledUser(
@@ -269,27 +196,36 @@ async function processScheduledUser(
       .single();
     if (existing.error) throw existing.error;
     if (existing.data.completed_at) {
-      let emailError = false;
-      let emailed = 0;
-      try {
-        emailed = await emailPendingNotifications(userId);
-      } catch (error) {
-        emailError = true;
-        console.error(`Scheduled email retry failed for ${userId}`, error);
-      }
-      return { skipped: true, created: 0, emailed, emailError };
+      return {
+        skipped: true,
+        created: 0,
+        emailDelivery: "gmail_queue",
+      };
     }
     runId = existing.data.id;
     const restart = await service()
       .from("price_scan_runs")
       .update({ started_at: new Date().toISOString(), result: {} })
-      .eq("id", runId);
+      .eq("id", runId)
+      .eq("user_id", userId);
     if (restart.error) throw restart.error;
   }
   const snapshot = await service().rpc("snapshot_daily_prices", {
     target_user: userId,
   });
   if (snapshot.error) throw snapshot.error;
+  const reportRun = await service().rpc("start_report_run_for_user", {
+    target_user: userId,
+    target_kind: kind === "בוקר" ? "morning" : "evening",
+  });
+  if (reportRun.error) throw reportRun.error;
+  const reportRunDetails = await service()
+    .from("report_runs")
+    .select("id,expected_books,expected_checks,completed_checks")
+    .eq("id", reportRun.data)
+    .eq("user_id", userId)
+    .single();
+  if (reportRunDetails.error) throw reportRunDetails.error;
   const settings = await settingsFor(userId);
   const { data: offers, error } = await service()
     .from("price_offers")
@@ -330,51 +266,54 @@ async function processScheduledUser(
       .update({
         next_check_at: new Date(now.getTime() + 2 * 86400000).toISOString(),
       })
-      .eq("id", offer.id);
+      .eq("id", offer.id)
+      .eq("user_id", userId);
     if (reschedule.error) throw reschedule.error;
   }
-  if (kind === "בוקר") {
-    const worthwhile = (offers || []).filter(
-      (offer) =>
-        Number(offer.deal_score || 0) >=
-        Number(settings.immediate_deal_threshold || 70),
-    ).length;
-    const report = await insertNotification({
-      user_id: userId,
-      notification_type: "דוח בוקר",
-      title: "דוח הבוקר של המדף החסר",
-      body: `${offers?.length || 0} הצעות פעילות. ${worthwhile} עסקאות מעל הסף. ${due.length} הצעות דורשות בדיקה.`,
-      dedupe_key: `morning:${localDate}`,
-      metadata: {
-        active_offers: offers?.length || 0,
-        worthwhile,
-        due: due.length,
-      },
-    });
-    if (report) created.push(report);
-  }
-  let emailError = false;
-  let emailed = 0;
-  try {
-    emailed = await emailPendingNotifications(userId);
-  } catch (error) {
-    emailError = true;
-    console.error(`Scheduled email delivery failed for ${userId}`, error);
-  }
+  const worthwhile = (offers || []).filter(
+    (offer) =>
+      Number(offer.deal_score || 0) >=
+      Number(settings.immediate_deal_threshold || 70),
+  ).length;
+  const reportLabel = kind === "בוקר" ? "דוח בוקר" : "דוח ערב";
+  const report = await insertNotification({
+    user_id: userId,
+    notification_type: reportLabel,
+    title: `${reportLabel} של המדף החסר`,
+    body: `נפתחה ריצת כיסוי מלאה עבור ${reportRunDetails.data.expected_books} ספרים ו ${reportRunDetails.data.expected_checks} בדיקות מקור. ${offers?.length || 0} הצעות פעילות. ${worthwhile} עסקאות מעל הסף.`,
+    dedupe_key: `${kind === "בוקר" ? "morning" : "evening"}:${localDate}`,
+    metadata: {
+      report_run_id: reportRunDetails.data.id,
+      expected_books: reportRunDetails.data.expected_books,
+      expected_checks: reportRunDetails.data.expected_checks,
+      completed_checks: reportRunDetails.data.completed_checks,
+      active_offers: offers?.length || 0,
+      worthwhile,
+      due: due.length,
+      email_delivery: "gmail_queue",
+    },
+  });
+  if (report) created.push(report);
   const completed = await service()
     .from("price_scan_runs")
     .update({
       completed_at: new Date().toISOString(),
       result: {
         created: created.length,
-        emailed,
         due: due.length,
-        email_error: emailError,
+        report_run_id: reportRunDetails.data.id,
+        email_delivery: "gmail_queue",
       },
     })
-    .eq("id", runId);
+    .eq("id", runId)
+    .eq("user_id", userId);
   if (completed.error) throw completed.error;
-  return { skipped: false, created: created.length, emailed, emailError };
+  return {
+    skipped: false,
+    created: created.length,
+    reportRunId: reportRunDetails.data.id,
+    emailDelivery: "gmail_queue",
+  };
 }
 
 async function processSchedule(request: Request) {

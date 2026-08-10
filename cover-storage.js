@@ -1,5 +1,6 @@
 (function enableCoverStorage() {
   if (typeof db === "undefined" || typeof state === "undefined") return;
+  if (!window.HamadafCoverStorageOps) return;
 
   const BUCKET = "book-covers";
   const PATH_PREFIX = "storage-path:";
@@ -9,6 +10,7 @@
   const originalLoadRemote = loadRemote;
   const originalSaveBook = saveBook;
   const originalEditBook = editBook;
+  const originalOpenDetail = openDetail;
 
   function pathMarker(path) {
     return PATH_PREFIX + path;
@@ -110,6 +112,9 @@
   rowToBook = function rowToBookWithStorage(row) {
     const book = originalRowToBook(row);
     book.coverPath = row.cover_path || "";
+    book.legacyCover = String(row.cover || "").startsWith("data:image/")
+      ? row.cover
+      : "";
     return book;
   };
 
@@ -125,8 +130,8 @@
     return row;
   };
 
-  loadRemote = async function loadRemoteWithStorage() {
-    await originalLoadRemote();
+  loadRemote = async function loadRemoteWithStorage(localBooks = null) {
+    await originalLoadRemote(localBooks);
     await refreshStoredCovers();
   };
 
@@ -138,6 +143,8 @@
 
   saveBook = async function saveBookWithStorage() {
     const currentValue = coverData.value;
+    const selectedBook = state.selected;
+    const previousPath = selectedBook && selectedBook.coverPath;
     let uploadedPath = "";
     let generatedId = "";
 
@@ -158,9 +165,22 @@
       const path = uploadedPath || markerPath(book && book.cover);
       if (book && path) {
         book.coverPath = path;
+        book.legacyCover = "";
         book.cover = await signedCoverUrl(path);
         persist();
         render();
+      }
+
+      if (uploadedPath && previousPath && previousPath !== uploadedPath) {
+        const cleanup = await window.HamadafCoverStorageOps.removePath(
+          db,
+          BUCKET,
+          previousPath,
+        );
+        if (!cleanup.ok) {
+          console.error("Old cover cleanup failed", cleanup.error);
+          toast("הכריכה החדשה נשמרה, אך ניקוי הכריכה הישנה נכשל");
+        }
       }
     } catch (error) {
       console.error("Cover storage save failed", error);
@@ -195,20 +215,40 @@
     if (!book || !state.user) return;
 
     let path = "";
+    const previousPath = book.coverPath || "";
     try {
       path = await uploadDataUrl(stored, book.id);
       const { error } = await db
         .from("books")
-        .update({ cover_path: path, updated_at: new Date().toISOString() })
-        .eq("id", book.id);
+        .update({
+          cover_path: path,
+          cover: "",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", book.id)
+        .eq("user_id", state.user.id);
       if (error) throw error;
 
       book.coverPath = path;
+      book.legacyCover = "";
       book.cover = await signedCoverUrl(path);
       persist();
       render();
       coverSearchModal.classList.remove("open");
       unlockScroll();
+
+      if (previousPath && previousPath !== path) {
+        const cleanup = await window.HamadafCoverStorageOps.removePath(
+          db,
+          BUCKET,
+          previousPath,
+        );
+        if (!cleanup.ok) {
+          console.error("Old cover cleanup failed", cleanup.error);
+          return toast("הכריכה נשמרה, אך ניקוי הכריכה הישנה נכשל");
+        }
+      }
+
       toast("הכריכה נשמרה ב Storage וסונכרנה");
     } catch (error) {
       console.error("Cover selection upload failed", error);
@@ -219,6 +259,54 @@
           : "שמירת הכריכה נכשלה. הכריכה הקודמת נשארה ללא שינוי",
       );
     }
+  };
+
+  async function permanentlyDeleteSelectedBook() {
+    const book = state.selected;
+    if (!book || book.status !== "סל מחזור" || !state.user) return;
+    if (!confirm("למחוק את הספר לצמיתות יחד עם הכריכה שלו?")) return;
+
+    const result = await window.HamadafCoverStorageOps.deleteBookWithCover({
+      db,
+      bucket: BUCKET,
+      book,
+      userId: state.user.id,
+      bookToRow,
+    });
+
+    if (result.status === "completed") {
+      state.books = state.books.filter((item) => item.id !== book.id);
+      state.selected = null;
+      persist();
+      render();
+      detailModal.classList.remove("open");
+      return toast("הספר והכריכה נמחקו לצמיתות");
+    }
+
+    if (result.status === "cleanup-failed-restored") {
+      return toast("מחיקת הכריכה נכשלה. הספר שוחזר ולא נמחק");
+    }
+
+    if (result.status === "rollback-failed") {
+      console.error("Book restore failed after cover cleanup error", result);
+      return toast("אירעה שגיאה חמורה במחיקה. יש לבדוק את הנתונים");
+    }
+
+    toast("מחיקת הספר נכשלה");
+  }
+
+  openDetail = function openDetailWithPermanentDelete(bookId) {
+    originalOpenDetail(bookId);
+    const book = state.books.find((item) => item.id === bookId);
+    if (!book || book.status !== "סל מחזור") return;
+    const actions = detail.querySelector(".actions");
+    if (!actions || document.getElementById("permanentDeleteBook")) return;
+    const button = document.createElement("button");
+    button.id = "permanentDeleteBook";
+    button.className = "danger";
+    button.textContent = "מחיקה לצמיתות";
+    button.onclick = permanentlyDeleteSelectedBook;
+    actions.appendChild(button);
   };
 
   save.onclick = saveBook;

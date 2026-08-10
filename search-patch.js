@@ -102,12 +102,7 @@
 
     const patchedSource = source
       .replace(oldFilter, newFilter)
-      .replace(oldDuplicateCheck, newDuplicateCheck)
-      .replace(
-        'בדיונים: "ספרים שנמצאים בדיונים או במשא ומתן"',
-        'בדיונים: "ספרים שנמצאים בדיונים"',
-      )
-      .replaceAll("העבר למשא ומתן", "העבר לבדיונים");
+      .replace(oldDuplicateCheck, newDuplicateCheck);
     window.fetch = originalFetch;
     return new Response(patchedSource, {
       status: response.status,

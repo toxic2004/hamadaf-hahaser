@@ -66,10 +66,6 @@ export function isScheduleAuthorized(configuredSecret, providedSecret) {
   return difference === 0;
 }
 
-export function assertEmailAccepted(response) {
-  if (!response.ok) throw new Error(`Email failed with ${response.status}`);
-}
-
 export function isUuid(value) {
   return (
     typeof value === "string" &&

@@ -77,7 +77,7 @@ const state = {
 const PRIORITY_ORDER = { דחופה: 3, גבוהה: 2, רגילה: 1 };
 const subtitles = {
   מחפש: "הספרים שאני מחפש",
-  בדיונים: "ספרים שנמצאים בדיונים או במשא ומתן",
+  בדיונים: "ספרים שנמצאים במשא ומתן",
   "מחכה לתשובה": "ספרים שמחכים לתשובת המוכר",
   מועדפים: "הספרים שסימנתי כמועדפים",
   השגתי: "ספרים שכבר השגתי",
@@ -136,7 +136,6 @@ function bind() {
   lookup.onclick = findBook;
   image.onchange = loadImage;
   signIn.onclick = login;
-  signUp.onclick = register;
   signOut.onclick = () => db.auth.signOut();
   [modal, detailModal, coverSearchModal].forEach(
     (m) =>
@@ -183,23 +182,6 @@ async function login() {
   authMessage.textContent = error
     ? "הכניסה נכשלה. בדוק את האימייל והסיסמה."
     : "";
-}
-async function register() {
-  const email = authEmail.value.trim(),
-    password = authPassword.value;
-  if (!email || password.length < 6)
-    return (authMessage.textContent = "צריך אימייל וסיסמה של לפחות 6 תווים");
-  authMessage.textContent = "יוצר חשבון...";
-  const { data, error } = await db.auth.signUp({
-    email,
-    password,
-    options: { emailRedirectTo: location.origin + location.pathname },
-  });
-  if (error)
-    return (authMessage.textContent = "יצירת החשבון נכשלה: " + error.message);
-  authMessage.textContent = data.session
-    ? "החשבון נוצר בהצלחה"
-    : "נשלח אליך אימייל אישור. אשר אותו ואז לחץ על כניסה.";
 }
 async function connected(user) {
   state.user = user;

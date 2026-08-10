@@ -1,0 +1,354 @@
+:root {
+  --report-green: #173f35;
+  --report-green-soft: #e2eee8;
+  --report-gold: #b7822f;
+  --report-gold-soft: #fbf1dc;
+  --report-paper: #f3efe5;
+  --report-white: #fffdf8;
+  --report-ink: #16352d;
+  --report-muted: #64766f;
+  --report-line: #ded7c9;
+}
+
+body {
+  background: radial-gradient(
+      circle at 85% 0,
+      rgba(183, 130, 47, 0.13),
+      transparent 32rem
+    ),
+    var(--report-paper);
+  color: var(--report-ink);
+}
+
+.reportShell {
+  width: min(1180px, 100%);
+  margin: auto;
+  padding: 24px max(18px, env(safe-area-inset-right)) 72px
+    max(18px, env(safe-area-inset-left));
+}
+
+.reportHero {
+  color: white;
+  background: linear-gradient(135deg, #12372f, #245f50);
+  border-radius: 28px;
+  padding: clamp(22px, 4vw, 42px);
+  display: flex;
+  justify-content: space-between;
+  align-items: end;
+  gap: 24px;
+  box-shadow: 0 24px 55px rgba(22, 53, 45, 0.2);
+}
+
+.reportHero h1 {
+  font-size: clamp(32px, 5vw, 56px);
+  line-height: 1.05;
+  max-width: 620px;
+}
+
+.eyebrow {
+  color: var(--report-gold);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  margin: 0 0 8px;
+}
+
+.reportHero .eyebrow {
+  color: #f0c97f;
+}
+
+.heroSub {
+  color: #dce9e4;
+  margin: 12px 0 0;
+}
+
+.heroActions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.heroActions .ghost {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.28);
+  color: white;
+}
+
+.heroActions .primary {
+  background: #d2a654;
+  color: #17352d;
+}
+
+.coverageBanner {
+  margin: 18px 0;
+  padding: 16px 18px;
+  border: 1px solid #d4a954;
+  border-radius: 16px;
+  background: var(--report-gold-soft);
+  line-height: 1.55;
+}
+
+.coverageBanner.complete {
+  border-color: #7da68f;
+  background: var(--report-green-soft);
+}
+
+.reportMetrics {
+  margin-top: 16px;
+}
+
+.reportMetrics .metric {
+  border-top: 4px solid var(--report-green);
+  background: var(--report-white);
+}
+
+.reportMetrics .metric:first-child {
+  border-top-color: var(--report-gold);
+}
+
+.reportSection {
+  margin-top: 22px;
+  padding: clamp(18px, 3vw, 28px);
+  border: 1px solid var(--report-line);
+  border-radius: 24px;
+  background: rgba(255, 253, 248, 0.94);
+  box-shadow: 0 10px 28px rgba(42, 61, 53, 0.06);
+}
+
+.sectionHeading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.dealList {
+  display: grid;
+  gap: 14px;
+}
+
+.dealBook {
+  display: grid;
+  grid-template-columns: 92px minmax(180px, 0.8fr) minmax(0, 2fr);
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid var(--report-line);
+  border-radius: 18px;
+  background: white;
+}
+
+.dealBook.target {
+  border-color: #d4a954;
+  box-shadow: inset 5px 0 0 #d4a954;
+}
+
+.reportCover {
+  width: 92px;
+  height: 132px;
+  object-fit: contain;
+  border-radius: 10px;
+  background: #ece7dc;
+}
+
+.coverFallback {
+  display: grid;
+  place-items: center;
+  text-align: center;
+  padding: 8px;
+  background: var(--report-green);
+  color: white;
+}
+
+.bookSummary h3 {
+  font-size: 21px;
+  margin-bottom: 7px;
+}
+
+.bookFlags {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.bookFlags span,
+.place {
+  border-radius: 99px;
+  padding: 4px 8px;
+  background: var(--report-green-soft);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.rankings {
+  display: grid;
+  gap: 8px;
+}
+
+.ranking {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 13px;
+  background: #f8f5ee;
+}
+
+.ranking:first-child {
+  background: var(--report-gold-soft);
+}
+
+.rankingPrice {
+  font-size: 21px;
+  font-weight: 900;
+  color: var(--report-green);
+  white-space: nowrap;
+}
+
+.unknownBox,
+.alternativeBox {
+  margin-top: 8px;
+  color: var(--report-muted);
+  font-size: 13px;
+}
+
+.compactTable {
+  overflow-x: auto;
+}
+
+.compactTable table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.compactTable th,
+.compactTable td {
+  padding: 11px 10px;
+  border-bottom: 1px solid var(--report-line);
+  text-align: right;
+}
+
+.coverageEditor {
+  display: grid;
+  gap: 8px;
+}
+
+.coverageRow {
+  display: grid;
+  grid-template-columns:
+    minmax(140px, 0.7fr) minmax(160px, 0.9fr) minmax(160px, 1.4fr)
+    auto auto;
+  gap: 8px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid var(--report-line);
+  border-radius: 13px;
+  background: white;
+}
+
+.coverageRow select,
+.coverageRow input,
+.bookPicker select {
+  width: 100%;
+  border: 1px solid var(--report-line);
+  border-radius: 10px;
+  padding: 10px;
+  background: white;
+}
+
+.coverageRow a {
+  color: var(--report-green);
+  font-weight: 800;
+}
+
+.statusPill {
+  display: inline-block;
+  padding: 5px 8px;
+  border-radius: 99px;
+  background: #eee8dc;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.emptyReport {
+  padding: 28px;
+  text-align: center;
+  color: var(--report-muted);
+  border: 1px dashed var(--report-line);
+  border-radius: 15px;
+}
+
+@media (max-width: 850px) {
+  .reportHero,
+  .sectionHeading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .heroActions {
+    justify-content: stretch;
+  }
+  .heroActions > * {
+    flex: 1 1 150px;
+  }
+  .dealBook {
+    grid-template-columns: 72px minmax(0, 1fr);
+  }
+  .reportCover {
+    width: 72px;
+    height: 108px;
+  }
+  .rankings {
+    grid-column: 1 / -1;
+  }
+  .ranking {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+  .ranking .button {
+    grid-column: 2 / -1;
+  }
+  .coverageRow {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 520px) {
+  .reportShell {
+    padding: 12px max(10px, env(safe-area-inset-right)) 42px
+      max(10px, env(safe-area-inset-left));
+  }
+  .reportHero,
+  .reportSection {
+    border-radius: 18px;
+  }
+  .reportMetrics {
+    grid-template-columns: 1fr 1fr;
+  }
+  .ranking {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .rankingPrice,
+  .ranking .button {
+    grid-column: 2;
+  }
+}
+
+@media print {
+  .reportHero {
+    color: var(--report-ink);
+    background: white;
+    box-shadow: none;
+    border: 1px solid var(--report-line);
+  }
+  .reportHero .eyebrow,
+  .heroSub {
+    color: var(--report-ink);
+  }
+  .reportSection,
+  .dealBook {
+    break-inside: avoid;
+    box-shadow: none;
+  }
+}

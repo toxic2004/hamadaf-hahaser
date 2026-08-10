@@ -6,13 +6,17 @@
     lastCandidates = [];
 
   function escapeHtml(value) {
-    return String(value || "").replace(/[&<>'"]/g, (ch) => ({
-      "&": "&amp;",
-      "<": "&lt;",
-      ">": "&gt;",
-      "'": "&#39;",
-      '"': "&quot;",
-    })[ch]);
+    return String(value || "").replace(
+      /[&<>'"]/g,
+      (ch) =>
+        ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          "'": "&#39;",
+          '"': "&quot;",
+        })[ch],
+    );
   }
 
   function normalizeText(text) {
@@ -88,7 +92,10 @@
   async function imageToDataUrl(file) {
     const image = await loadImage(file);
     const maxSide = 1600;
-    const scale = Math.min(1, maxSide / Math.max(image.naturalWidth, image.naturalHeight));
+    const scale = Math.min(
+      1,
+      maxSide / Math.max(image.naturalWidth, image.naturalHeight),
+    );
     const width = Math.max(1, Math.round(image.naturalWidth * scale));
     const height = Math.max(1, Math.round(image.naturalHeight * scale));
     const canvas = document.createElement("canvas");
@@ -114,7 +121,10 @@
     const data = pixels.data;
     for (let i = 0; i < data.length; i += 4) {
       const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-      const contrast = gray < 145 ? Math.max(0, gray * 0.72) : Math.min(255, 128 + (gray - 128) * 1.45);
+      const contrast =
+        gray < 145
+          ? Math.max(0, gray * 0.72)
+          : Math.min(255, 128 + (gray - 128) * 1.45);
       data[i] = contrast;
       data[i + 1] = contrast;
       data[i + 2] = contrast;
@@ -129,7 +139,8 @@
         const text = normalizeText(result && result.data && result.data.text);
         const hebrew = (text.match(/[\u0590-\u05ff]/g) || []).length;
         const useful = normalizedWords(text).length;
-        const confidence = Number(result && result.data && result.data.confidence) || 0;
+        const confidence =
+          Number(result && result.data && result.data.confidence) || 0;
         return { text, score: hebrew * 3 + useful * 2 + confidence / 5 };
       })
       .sort((a, b) => b.score - a.score)[0];
@@ -162,7 +173,8 @@
     });
     if (info.language === "he") score += 5;
     if (info.imageLinks) score += 2;
-    if (titleWords.length && titleWords.every((word) => source.has(word))) score += 20;
+    if (titleWords.length && titleWords.every((word) => source.has(word)))
+      score += 20;
     return score;
   }
 
@@ -183,7 +195,9 @@
     });
     if (error) throw error;
     if (data && data.error) throw new Error(data.error);
-    const candidates = Array.isArray(data && data.candidates) ? data.candidates : [];
+    const candidates = Array.isArray(data && data.candidates)
+      ? data.candidates
+      : [];
     return candidates
       .map((candidate) => ({
         title: normalizeText(candidate.title),
@@ -203,16 +217,20 @@
         setProgress(60 + Math.round((event.progress || 0) * 25));
     };
     const results = [];
-    results.push(await Tesseract.recognize(prepared, "heb+eng", {
-      logger: progressLogger,
-      tessedit_pageseg_mode: "6",
-      preserve_interword_spaces: "1",
-    }));
-    results.push(await Tesseract.recognize(file, "heb+eng", {
-      logger: progressLogger,
-      tessedit_pageseg_mode: "11",
-      preserve_interword_spaces: "1",
-    }));
+    results.push(
+      await Tesseract.recognize(prepared, "heb+eng", {
+        logger: progressLogger,
+        tessedit_pageseg_mode: "6",
+        preserve_interword_spaces: "1",
+      }),
+    );
+    results.push(
+      await Tesseract.recognize(file, "heb+eng", {
+        logger: progressLogger,
+        tessedit_pageseg_mode: "11",
+        preserve_interword_spaces: "1",
+      }),
+    );
     const best = chooseBestOcr(results);
     return best ? best.text : "";
   }
@@ -221,7 +239,10 @@
     const file = $("coverImage").files[0];
     if (!file) return setCoverMessage("צריך לבחור תמונה.", true);
     if (!/^image\/(jpeg|png|webp|heic|heif)$/i.test(file.type || ""))
-      return setCoverMessage("סוג התמונה אינו נתמך. השתמש ב JPG, PNG או WEBP.", true);
+      return setCoverMessage(
+        "סוג התמונה אינו נתמך. השתמש ב JPG, PNG או WEBP.",
+        true,
+      );
     if (file.size > 12 * 1024 * 1024)
       return setCoverMessage("התמונה גדולה מדי. בחר תמונה עד 12MB.", true);
 
@@ -237,10 +258,13 @@
       setProgress(65);
       if (visualCandidates.length) {
         const best = visualCandidates[0];
-        $("coverOcrText").value = [best.title, best.author].filter(Boolean).join("\n");
+        $("coverOcrText").value = [best.title, best.author]
+          .filter(Boolean)
+          .join("\n");
         const confidence = Math.round(best.confidence * 100);
         setCoverMessage(
-          "זוהה: " + best.title +
+          "זוהה: " +
+            best.title +
             (best.author ? " מאת " + best.author : "") +
             (confidence ? " (ביטחון " + confidence + "%)" : "") +
             ". מאמת מול מאגר הספרים...",
@@ -250,19 +274,28 @@
       }
       throw new Error("NO_VISUAL_MATCH");
     } catch (visualError) {
-      console.warn("Visual recognition failed, using OCR fallback", visualError);
+      console.warn(
+        "Visual recognition failed, using OCR fallback",
+        visualError,
+      );
       setCoverMessage("הזיהוי החזותי לא מצא התאמה. מפעיל זיהוי טקסט כגיבוי...");
       try {
         const text = await recognizeWithOcr(file);
         $("coverOcrText").value = text;
         if (!text) {
-          setCoverMessage("לא ניתן לזהות את הספר. אפשר להקליד שם ספר ומחבר ידנית.", true);
+          setCoverMessage(
+            "לא ניתן לזהות את הספר. אפשר להקליד שם ספר ומחבר ידנית.",
+            true,
+          );
           return;
         }
         await searchCoverBooks(true);
       } catch (ocrError) {
         console.error("Cover recognition failed", visualError, ocrError);
-        setCoverMessage("זיהוי הכריכה נכשל. אפשר להקליד שם ספר ומחבר ידנית וללחוץ חיפוש.", true);
+        setCoverMessage(
+          "זיהוי הכריכה נכשל. אפשר להקליד שם ספר ומחבר ידנית וללחוץ חיפוש.",
+          true,
+        );
       }
     } finally {
       $("coverRecognize").disabled = false;
@@ -274,7 +307,8 @@
   async function searchCoverBooks(automatic = false) {
     const text = normalizeText($("coverOcrText").value);
     const queries = buildQueries(text);
-    if (!queries.length) return setCoverMessage("צריך שם ספר או מחבר לחיפוש.", true);
+    if (!queries.length)
+      return setCoverMessage("צריך שם ספר או מחבר לחיפוש.", true);
 
     $("coverSearch").disabled = true;
     $("coverResults").innerHTML = "";
@@ -287,7 +321,8 @@
         if (response.status !== "fulfilled") return;
         response.value.forEach((item) => {
           const info = item.volumeInfo || {};
-          const key = item.id || [info.title, (info.authors || []).join("|")].join("|");
+          const key =
+            item.id || [info.title, (info.authors || []).join("|")].join("|");
           if (!unique.has(key)) unique.set(key, item);
         });
       });
@@ -305,34 +340,62 @@
         $("selectedCover").removeAttribute("src");
         $("coverNotes").value = "זוהה מתמונת כריכה, ללא התאמה במאגר הכריכות";
         $("coverSaveArea").classList.remove("hidden");
-        return setCoverMessage("הספר זוהה, אך לא נמצאה כריכה תואמת ב Google Books. בדוק את הפרטים לפני השמירה.", true);
+        return setCoverMessage(
+          "הספר זוהה, אך לא נמצאה כריכה תואמת ב Google Books. בדוק את הפרטים לפני השמירה.",
+          true,
+        );
       }
 
       $("coverResults").innerHTML = lastCandidates
         .map((item, index) => {
           const info = item.volumeInfo || {};
           const title = info.title || "ללא שם";
-          const authors = Array.isArray(info.authors) ? info.authors.join(", ") : "";
-          const cover = safeCover(info.imageLinks && (info.imageLinks.thumbnail || info.imageLinks.smallThumbnail));
-          return '<button type="button" class="result" data-cover-index="' + index + '">' +
-            (cover ? '<img src="' + escapeHtml(cover) + '" alt="">' : '<span class="no-cover">ללא תמונה</span>') +
-            '<span><strong>' + escapeHtml(title) + '</strong><small>' + escapeHtml(authors) + '</small></span></button>';
+          const authors = Array.isArray(info.authors)
+            ? info.authors.join(", ")
+            : "";
+          const cover = safeCover(
+            info.imageLinks &&
+              (info.imageLinks.thumbnail || info.imageLinks.smallThumbnail),
+          );
+          return (
+            '<button type="button" class="result" data-cover-index="' +
+            index +
+            '">' +
+            (cover
+              ? '<img src="' + escapeHtml(cover) + '" alt="">'
+              : '<span class="no-cover">ללא תמונה</span>') +
+            "<span><strong>" +
+            escapeHtml(title) +
+            "</strong><small>" +
+            escapeHtml(authors) +
+            "</small></span></button>"
+          );
         })
         .join("");
 
-      $("coverResults").querySelectorAll("[data-cover-index]").forEach((button) => {
-        button.onclick = () => selectCoverBook(lastCandidates[Number(button.dataset.coverIndex)]);
-      });
+      $("coverResults")
+        .querySelectorAll("[data-cover-index]")
+        .forEach((button) => {
+          button.onclick = () =>
+            selectCoverBook(lastCandidates[Number(button.dataset.coverIndex)]);
+        });
 
       if (automatic && lastCandidates.length === 1) {
         selectCoverBook(lastCandidates[0]);
-        setCoverMessage("הספר זוהה ונמצאה התאמה אחת. בדוק את הפרטים לפני השמירה.");
+        setCoverMessage(
+          "הספר זוהה ונמצאה התאמה אחת. בדוק את הפרטים לפני השמירה.",
+        );
       } else {
-        setCoverMessage("נמצאו " + lastCandidates.length + " התאמות. בחר את הספר הנכון.");
+        setCoverMessage(
+          "נמצאו " + lastCandidates.length + " התאמות. בחר את הספר הנכון.",
+        );
       }
     } catch (error) {
       console.error("Cover search failed", error);
-      setCoverMessage("החיפוש במאגר הספרים נכשל. אפשר לתקן את השם ולנסות שוב.", true);
+      setCoverMessage(
+        "החיפוש במאגר הספרים נכשל. אפשר לתקן את השם ולנסות שוב.",
+        true,
+      );
     } finally {
       $("coverSearch").disabled = false;
     }
@@ -340,9 +403,15 @@
 
   function selectCoverBook(item) {
     const info = item.volumeInfo || {};
-    $("coverTitle").value = (info.title || "") + (info.subtitle ? ": " + info.subtitle : "");
-    $("coverAuthor").value = Array.isArray(info.authors) ? info.authors.join(", ") : "";
-    selectedCover = safeCover(info.imageLinks && (info.imageLinks.thumbnail || info.imageLinks.smallThumbnail));
+    $("coverTitle").value =
+      (info.title || "") + (info.subtitle ? ": " + info.subtitle : "");
+    $("coverAuthor").value = Array.isArray(info.authors)
+      ? info.authors.join(", ")
+      : "";
+    selectedCover = safeCover(
+      info.imageLinks &&
+        (info.imageLinks.thumbnail || info.imageLinks.smallThumbnail),
+    );
     if (selectedCover) $("selectedCover").src = selectedCover;
     else $("selectedCover").removeAttribute("src");
     $("coverNotes").value = "זוהה חזותית מתמונת כריכה";
@@ -356,14 +425,20 @@
     if (typeof user === "undefined" || !user)
       return setCoverMessage("צריך להתחבר מחדש.", true);
 
-    const duplicateData = await db.from("books").select("id,title,status");
+    const duplicateData = await db
+      .from("books")
+      .select("id,title,status")
+      .eq("user_id", user.id);
     if (duplicateData.error)
       return setCoverMessage("לא ניתן לבדוק כפילויות כרגע.", true);
 
     const normalizedTitle = title.toLowerCase().replace(/\s+/g, " ").trim();
-    const duplicate = (duplicateData.data || []).find((book) =>
-      String(book.title || "").toLowerCase().replace(/\s+/g, " ").trim() === normalizedTitle &&
-      book.status !== "סל מחזור",
+    const duplicate = (duplicateData.data || []).find(
+      (book) =>
+        String(book.title || "")
+          .toLowerCase()
+          .replace(/\s+/g, " ")
+          .trim() === normalizedTitle && book.status !== "סל מחזור",
     );
     if (duplicate)
       return setCoverMessage("הספר כבר קיים ברשימה: " + duplicate.title, true);
@@ -386,7 +461,10 @@
     $("coverSave").disabled = false;
     $("coverSave").textContent = "שמירה במדף החסר";
     if (error)
-      return setCoverMessage("השמירה נכשלה: " + (error.message || "שגיאה לא ידועה"), true);
+      return setCoverMessage(
+        "השמירה נכשלה: " + (error.message || "שגיאה לא ידועה"),
+        true,
+      );
     setCoverMessage("הספר נשמר במדף החסר.");
     resetCover();
   }
@@ -426,7 +504,8 @@
     if (window.Tesseract) return Promise.resolve();
     return new Promise((resolve, reject) => {
       const script = document.createElement("script");
-      script.src = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
+      script.src =
+        "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
       script.onload = resolve;
       script.onerror = reject;
       document.head.appendChild(script);
@@ -435,7 +514,9 @@
 
   function init() {
     injectCoverUi();
-    loadTesseract().catch(() => console.warn("OCR fallback could not be loaded"));
+    loadTesseract().catch(() =>
+      console.warn("OCR fallback could not be loaded"),
+    );
   }
 
   if (document.readyState === "loading")
