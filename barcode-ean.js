@@ -198,7 +198,8 @@
     try {
       const { data: books, error: duplicateError } = await db
         .from("books")
-        .select("id,title,notes,status,isbn");
+        .select("id,title,notes,status,isbn")
+        .eq("user_id", user.id);
       if (duplicateError) throw duplicateError;
       const duplicate = (books || []).find((book) => {
         if (book.status === "סל מחזור") return false;

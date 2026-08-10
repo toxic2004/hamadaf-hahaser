@@ -21,10 +21,7 @@ test("all pages are Hebrew RTL, responsive, and have unique IDs", () => {
 
 test("mobile layout protects iPhone safe areas and narrow screens", () => {
   const styles = fs.readFileSync(path.join(root, "styles.css"), "utf8");
-  const dashboard = fs.readFileSync(
-    path.join(root, "dashboard.css"),
-    "utf8",
-  );
+  const dashboard = fs.readFileSync(path.join(root, "dashboard.css"), "utf8");
   const isbn = fs.readFileSync(path.join(root, "isbn.html"), "utf8");
 
   for (const source of [styles, dashboard, isbn]) {
@@ -85,7 +82,10 @@ test("critical UI flows are wired and ISBN has a back link", () => {
     "utf8",
   );
   assert.match(coverModule, /id="coverImage"/);
-  assert.match(coverModule, /accept="image\/\*"/);
+  assert.match(
+    coverModule,
+    /accept="image\/jpeg,image\/png,image\/webp,image\/heic,image\/heif"/,
+  );
   assert.match(coverModule, /capture="environment"/);
 });
 

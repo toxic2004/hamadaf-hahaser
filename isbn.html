@@ -394,10 +394,12 @@
         const code = clean($("isbn").value);
         $("isbn").value = code;
         if (!valid(code)) return msg("מספר ה ISBN אינו תקין.", true);
+        if (!user) return msg("צריך להתחבר מחדש.", true);
         msg("בודק אם הספר כבר נמצא ברשימה...");
         let { data, error } = await db
           .from("books")
-          .select("id,title,notes,status,isbn");
+          .select("id,title,notes,status,isbn")
+          .eq("user_id", user.id);
         if (
           error &&
           (["PGRST204", "42703"].includes(error.code) ||
@@ -405,7 +407,8 @@
         ) {
           const fallback = await db
             .from("books")
-            .select("id,title,notes,status");
+            .select("id,title,notes,status")
+            .eq("user_id", user.id);
           data = fallback.data;
           error = fallback.error;
         }

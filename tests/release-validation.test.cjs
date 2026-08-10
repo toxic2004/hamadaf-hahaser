@@ -8,7 +8,8 @@ const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
 
 function localAssetsFromHtml(html) {
   const assets = [];
-  const pattern = /<(?:script|link)\b[^>]*(?:src|href)=["']([^"']+)["'][^>]*>/gi;
+  const pattern =
+    /<(?:script|link)\b[^>]*(?:src|href)=["']([^"']+)["'][^>]*>/gi;
   for (const match of html.matchAll(pattern)) {
     const value = match[1].split("?")[0].split("#")[0];
     if (!value || /^(?:https?:|data:|mailto:|tel:|#)/i.test(value)) continue;
@@ -32,27 +33,68 @@ test("duplicate detection covers ISBN, title and author, recycle bin restore and
   assert.match(patch, /\.eq\("user_id", state\.user\.id\)/);
 });
 
-test("display wording consistently uses discussions", () => {
+test("display wording consistently uses negotiation while preserving the stored value", () => {
   const index = read("index.html");
   const patch = read("search-patch.js");
-  assert.match(index, /data-status="בדיונים"[\s\S]*?<span>◌<\/span>בדיונים/);
-  assert.doesNotMatch(index, />משא ומתן</);
-  assert.match(patch, /העבר לבדיונים/);
+  const app = read("app.js");
+  assert.match(index, /data-status="בדיונים"[\s\S]*?<span>◌<\/span>משא ומתן/);
+  assert.match(app, /בדיונים: "ספרים שנמצאים במשא ומתן"/);
+  assert.match(app, /data-move="בדיונים">העבר למשא ומתן/);
+  assert.doesNotMatch(patch, /העבר לבדיונים/);
 });
 
 test("Supabase browser dependency is pinned exactly", () => {
-  for (const file of ["index.html", "isbn.html"]) {
+  for (const file of [
+    "index.html",
+    "isbn.html",
+    "statistics.html",
+    "prices.html",
+    "notifications.html",
+    "price-history.html",
+  ]) {
     const html = read(file);
     assert.match(html, /@supabase\/supabase-js@2\.110\.9/);
     assert.doesNotMatch(html, /@supabase\/supabase-js@2(?:["'/])/);
+  }
+  assert.match(
+    read("supabase/functions/alerts/index.ts"),
+    /npm:@supabase\/supabase-js@2\.110\.9/,
+  );
+});
+
+test("the personal app does not expose self registration", () => {
+  assert.doesNotMatch(read("index.html"), /id="signUp"|יצירת חשבון/);
+  assert.doesNotMatch(read("app.js"), /auth\.signUp|function register/);
+});
+
+test("user scoped screens filter reads and mutations by user id", () => {
+  const expectations = {
+    "prices.js": /\.eq\("user_id", user\.id\)/,
+    "notifications.js": /\.eq\("user_id", user\.id\)/,
+    "statistics.js": /\.eq\("user_id", user\.id\)/,
+    "price-history.js": /\.eq\("user_id", user\.id\)/,
+    "cover-recognition.js": /\.eq\("user_id", user\.id\)/,
+    "cover-storage.js": /\.eq\("user_id", state\.user\.id\)/,
+    "migrate-one-cover.js": /\.eq\("user_id", window\.state\.user\.id\)/,
+    "barcode-ean.js": /\.eq\("user_id", user\.id\)/,
+    "isbn.html": /\.eq\("user_id", user\.id\)/,
+  };
+  for (const [file, pattern] of Object.entries(expectations)) {
+    assert.match(read(file), pattern, file);
   }
 });
 
 test("manual import signature is loaded through a cache-busted loader", () => {
   const index = read("index.html");
   const loader = read("safe-app-loader.js");
-  assert.match(index, /safe-app-loader\.js\?v=local-import-signature-20260729-1/);
-  assert.match(loader, /manual-import\.js\?v=local-import-signature-20260729-1/);
+  assert.match(
+    index,
+    /safe-app-loader\.js\?v=quality-cover-cleanup-20260810-1/,
+  );
+  assert.match(
+    loader,
+    /manual-import\.js\?v=local-import-signature-20260729-1/,
+  );
 });
 
 test("ISBN scanner loads pinned ZXing from two CDNs with fallback", () => {
@@ -98,11 +140,21 @@ test("Israeli book barcode fallback uses Quagga2 EAN readers and preserves non-I
 });
 
 test("all local script and stylesheet references exist", () => {
-  for (const file of ["index.html", "isbn.html", "statistics.html", "prices.html", "notifications.html"]) {
+  for (const file of [
+    "index.html",
+    "isbn.html",
+    "statistics.html",
+    "prices.html",
+    "notifications.html",
+  ]) {
     if (!fs.existsSync(path.join(root, file))) continue;
     const html = read(file);
     for (const asset of localAssetsFromHtml(html)) {
-      assert.equal(fs.existsSync(path.join(root, asset)), true, `${file} references missing ${asset}`);
+      assert.equal(
+        fs.existsSync(path.join(root, asset)),
+        true,
+        `${file} references missing ${asset}`,
+      );
     }
   }
 });

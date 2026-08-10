@@ -10,6 +10,8 @@ const SOURCES = [
   "עברית",
   "סטימצקי",
   "צומת ספרים",
+  "סיפור חוזר",
+  "Rebooks",
   "חנויות עצמאיות",
   "חיפוש כללי",
 ];
@@ -63,6 +65,8 @@ function sourceSearches(title) {
       `https://www.steimatzky.co.il/catalogsearch/result/?q=${query}`,
     ],
     ["צומת ספרים", google(`site:booknet.co.il ${title}`)],
+    ["סיפור חוזר", google(`site:sipurhozer.com ${title}`)],
+    ["Rebooks", google(`site:rebooks.org.il ${title}`)],
     ["חנויות עצמאיות", google(`חנויות ספרים עצמאיות ${title}`)],
     ["חיפוש כללי", google(`ספר מודפס ${title} מחיר`)],
   ];
@@ -281,6 +285,7 @@ async function saveOffer() {
         .from("price_offers")
         .update(row)
         .eq("id", existing.id)
+        .eq("user_id", user.id)
         .select("*")
         .single()
     : await db.from("price_offers").insert(row).select("*").single();
@@ -328,7 +333,8 @@ async function checkOffer(id) {
       next_check_at: new Date(now.getTime() + 2 * 86400000).toISOString(),
       updated_at: now.toISOString(),
     })
-    .eq("id", id);
+    .eq("id", id)
+    .eq("user_id", user.id);
   if (error) return showError("עדכון מועד הבדיקה נכשל.");
   await loadOffers();
 }
@@ -344,7 +350,8 @@ async function removeOffer(id) {
       last_checked_at: now,
       updated_at: now,
     })
-    .eq("id", id);
+    .eq("id", id)
+    .eq("user_id", user.id);
   if (error) return showError("סימון המודעה כהוסרה נכשל.");
   await loadOffers();
 }
@@ -358,6 +365,7 @@ async function loadOffers() {
   const { data, error } = await db
     .from("price_offers")
     .select("*")
+    .eq("user_id", user.id)
     .order("created_at", { ascending: false });
   if (error)
     return showError("טעינת ההצעות נכשלה. ודא שמיגרציית המחירים הופעלה.");
@@ -368,8 +376,17 @@ async function loadOffers() {
 async function loadData() {
   $("loading").classList.remove("hidden");
   const [bookResult, settingsResult] = await Promise.all([
-    db.from("books").select("*").neq("status", "סל מחזור").order("title"),
-    db.from("notification_settings").select("*").maybeSingle(),
+    db
+      .from("books")
+      .select("*")
+      .eq("user_id", user.id)
+      .neq("status", "סל מחזור")
+      .order("title"),
+    db
+      .from("notification_settings")
+      .select("*")
+      .eq("user_id", user.id)
+      .maybeSingle(),
   ]);
   $("loading").classList.add("hidden");
   if (bookResult.error) return showError("טעינת הספרים נכשלה.");

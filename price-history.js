@@ -49,12 +49,14 @@ async function loadHistory() {
     db
       .from("daily_book_prices")
       .select("*")
+      .eq("user_id", user.id)
       .eq("book_id", bookId)
       .gte("captured_on", cutoff)
       .order("captured_on", { ascending: true }),
     db
       .from("price_history")
       .select("*")
+      .eq("user_id", user.id)
       .eq("book_id", bookId)
       .eq("is_removed", true)
       .gte("captured_on", cutoff)
@@ -146,6 +148,7 @@ async function loadBooks() {
   const { data, error } = await db
     .from("books")
     .select("id,title,purchase_price")
+    .eq("user_id", user.id)
     .order("title");
   if (error) {
     $("loading").classList.add("hidden");

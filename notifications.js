@@ -50,6 +50,7 @@ async function loadNotifications() {
   const { data, error } = await db
     .from("notifications")
     .select("*")
+    .eq("user_id", user.id)
     .order("created_at", { ascending: false })
     .limit(200);
   if (error)
@@ -62,6 +63,7 @@ async function loadSettings() {
   const { data, error } = await db
     .from("notification_settings")
     .select("*")
+    .eq("user_id", user.id)
     .maybeSingle();
   if (error) return showError("טעינת הגדרות ההתראה נכשלה.");
   $("threshold").value = data?.immediate_deal_threshold ?? 70;
@@ -107,7 +109,8 @@ async function markRead(id) {
   const { error } = await db
     .from("notifications")
     .update({ read_at: new Date().toISOString() })
-    .eq("id", id);
+    .eq("id", id)
+    .eq("user_id", user.id);
   if (error) return showError("סימון ההתראה נכשל.");
   await loadNotifications();
 }
@@ -116,6 +119,7 @@ async function markAllRead() {
   const { error } = await db
     .from("notifications")
     .update({ read_at: new Date().toISOString() })
+    .eq("user_id", user.id)
     .is("read_at", null);
   if (error) return showError("סימון ההתראות נכשל.");
   await loadNotifications();

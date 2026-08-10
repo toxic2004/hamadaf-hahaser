@@ -3,6 +3,6 @@ declare const Deno: {
   serve(handler: (request: Request) => Response | Promise<Response>): void;
 };
 
-declare module "npm:@supabase/supabase-js@2" {
+declare module "npm:@supabase/supabase-js@2.110.9" {
   export function createClient(...args: any[]): any;
 }

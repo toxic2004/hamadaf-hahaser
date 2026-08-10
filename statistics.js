@@ -179,6 +179,7 @@ async function loadBooks() {
   const { data, error } = await db
     .from("books")
     .select("*")
+    .eq("user_id", user.id)
     .order("created_at", { ascending: true });
   $("loading").classList.add("hidden");
   if (error) {

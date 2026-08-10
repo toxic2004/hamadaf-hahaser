@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width,initial-scale=1,viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#173f35" />
+    <title>הדוח המקצועי | המדף החסר</title>
+    <link rel="stylesheet" href="./dashboard.css" />
+    <link rel="stylesheet" href="./report.css" />
+  </head>
+  <body>
+    <section id="authCard" class="authCard">
+      <p class="eyebrow">המדף החסר</p>
+      <h2>כניסה לדוח המקצועי</h2>
+      <p class="sub">השתמש באותו חשבון של המדף שלך.</p>
+      <div class="field">
+        <label for="email">אימייל</label><input id="email" type="email" />
+      </div>
+      <div class="field">
+        <label for="password">סיסמה</label
+        ><input id="password" type="password" />
+      </div>
+      <button id="login" class="primary">כניסה</button>
+      <p id="authMessage" class="sub" aria-live="polite"></p>
+    </section>
+
+    <main id="app" class="reportShell hidden">
+      <header class="reportHero">
+        <div>
+          <p class="eyebrow">דוח קנייה יומי</p>
+          <h1>מה כדאי לקנות היום</h1>
+          <p id="reportMeta" class="heroSub"></p>
+        </div>
+        <div class="heroActions noPrint">
+          <a class="button ghost" href="./">חזרה למדף</a>
+          <a class="button ghost" href="prices.html">הוספת הצעה</a>
+          <button id="printReport" class="ghost">הדפסה או PDF</button>
+          <button id="startRun" class="primary">פתיחת ריצת בדיקה מלאה</button>
+        </div>
+      </header>
+
+      <div id="loading" class="notice">טוען את הדוח...</div>
+      <div id="error" class="error hidden" role="alert"></div>
+      <section id="content" class="hidden">
+        <article id="coverageBanner" class="coverageBanner"></article>
+        <section class="metrics reportMetrics" aria-label="מדדי הדוח">
+          <article class="metric">
+            <span>כיסוי מקורות</span><strong id="coverageMetric">0%</strong
+            ><small id="coverageDetail"></small>
+          </article>
+          <article class="metric">
+            <span>ספרים פעילים</span><strong id="bookMetric">0</strong
+            ><small>כל הספרים שעדיין לא הושגו</small>
+          </article>
+          <article class="metric">
+            <span>עסקאות עד 30 ₪</span><strong id="dealMetric">0</strong
+            ><small>רק מחיר כולל ידוע</small>
+          </article>
+          <article class="metric">
+            <span>בדיקות חסרות</span><strong id="missingMetric">0</strong
+            ><small>לא נסתרות מהדוח</small>
+          </article>
+        </section>
+
+        <section class="reportSection">
+          <div class="sectionHeading">
+            <div>
+              <p class="eyebrow">פעולה מיידית</p>
+              <h2>ההצעות הטובות ביותר</h2>
+            </div>
+            <p class="sub">
+              שלוש הצעות מדויקות לכל ספר. משלוח לא ידוע מוצג בנפרד.
+            </p>
+          </div>
+          <div id="dealList" class="dealList"></div>
+        </section>
+
+        <section class="reportSection">
+          <div class="sectionHeading">
+            <div>
+              <p class="eyebrow">תמונת מצב</p>
+              <h2>ספרים ללא הצעה מדורגת</h2>
+            </div>
+          </div>
+          <div id="noOfferList" class="compactTable"></div>
+        </section>
+
+        <section class="reportSection noPrint">
+          <div class="sectionHeading">
+            <div>
+              <p class="eyebrow">בקרת איכות</p>
+              <h2>כיסוי לכל ספר ולכל מקור</h2>
+            </div>
+            <div class="bookPicker field">
+              <label for="coverageBook">ספר</label
+              ><select id="coverageBook"></select>
+            </div>
+          </div>
+          <p class="sub">
+            ריצה תושלם רק לאחר שלכל מקור הוגדר סטטוס. פתיחת קישור אינה מסומנת
+            אוטומטית כסריקה.
+          </p>
+          <div id="coverageEditor" class="coverageEditor"></div>
+        </section>
+
+        <section class="reportSection">
+          <div class="sectionHeading">
+            <div>
+              <p class="eyebrow">שקיפות</p>
+              <h2>מקורות שלא נבדקו</h2>
+            </div>
+          </div>
+          <div id="missingSources" class="compactTable"></div>
+        </section>
+      </section>
+    </main>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.110.9"></script>
+    <script src="./supabase-client.js"></script>
+    <script src="./report-core.js"></script>
+    <script src="./report.js"></script>
+  </body>
+</html>
