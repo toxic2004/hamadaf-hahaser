@@ -333,6 +333,7 @@ async function loadData() {
       .select("*")
       .eq("user_id", user.id)
       .eq("run_id", run.id)
+      .eq("scope_active", true)
       .order("created_at");
     if (result.error) return showError("טעינת בדיקות המקורות נכשלה.");
     checks = result.data || [];

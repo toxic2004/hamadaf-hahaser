@@ -73,3 +73,13 @@ test("coverage is complete only when every expected check has a terminal status"
   assert.equal(complete.percent, 100);
   assert.equal(complete.complete, true);
 });
+
+test("a temporary source error remains pending until retry exhaustion", () => {
+  const result = report.coverageSummary(
+    [{ status: "found" }, { status: "temporary_error" }],
+    2,
+  );
+  assert.equal(result.completed, 1);
+  assert.equal(result.pending, 1);
+  assert.equal(result.complete, false);
+});

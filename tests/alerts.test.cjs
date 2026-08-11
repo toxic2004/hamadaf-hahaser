@@ -9,13 +9,21 @@ async function core() {
   return import(path.join(root, "supabase/functions/alerts/core.mjs"));
 }
 
-test("scheduled alerts respect each user's configured hours", () => {
+test("scheduled alerts prepare the next configured report throughout the day", () => {
   const source = fs.readFileSync(
     path.join(root, "supabase/functions/alerts/index.ts"),
     "utf8",
   );
 
-  assert.match(source, /scheduledKinds\(settings, local\.hour\)/);
+  assert.match(
+    source,
+    /nextPreparationTarget\(localDate, localHour, settings\)/,
+  );
+  assert.match(source, /scanOldestRun\(userId\)/);
+  assert.match(
+    source,
+    /runIsDue\(completedRun, local\.date, local\.hour, settings\)/,
+  );
 });
 
 test("missing settings default to reports at 07:00 and 21:00", () => {
@@ -140,7 +148,8 @@ test("database failures are not ignored and Gmail stays the only delivery path",
     "utf8",
   );
   assert.match(source, /if \(snapshot\.error\) throw snapshot\.error/);
-  assert.match(source, /if \(reportRun\.error\) throw reportRun\.error/);
+  assert.match(source, /if \(created\.error\) throw created\.error/);
+  assert.match(source, /if \(applied\.error\) throw applied\.error/);
   assert.match(source, /if \(completed\.error\) throw completed\.error/);
   assert.match(source, /if \(reschedule\.error\) throw reschedule\.error/);
   assert.match(source, /emailDelivery: "gmail_queue"/);
@@ -164,6 +173,25 @@ test("scheduled runs open a complete report coverage matrix", () => {
   assert.match(source, /start_report_run_for_user/);
   assert.match(source, /expected_checks/);
   assert.match(source, /report_run_id/);
+});
+
+test("the hourly scheduler cannot enqueue a report before coverage completes", () => {
+  const migration = fs.readFileSync(
+    path.join(
+      root,
+      "supabase/migrations/20260810085148_complete_report_scanner.sql",
+    ),
+    "utf8",
+  );
+  const scheduler = migration.slice(
+    migration.indexOf(
+      "create or replace function private.invoke_alerts_hourly",
+    ),
+  );
+  assert.match(scheduler, /timeout_milliseconds := 110000/);
+  assert.doesNotMatch(scheduler, /insert into public\.notifications/);
+  assert.match(migration, /apply_report_check_results/);
+  assert.match(migration, /email_address,\s+notifications\.metadata/);
 });
 
 test("GitHub alert workflow is a manual fallback", () => {

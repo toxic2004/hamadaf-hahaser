@@ -10,7 +10,6 @@
     "not_found",
     "login_required",
     "blocked",
-    "temporary_error",
     "unavailable",
     "manual_required",
   ]);
