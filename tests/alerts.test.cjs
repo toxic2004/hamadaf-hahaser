@@ -73,6 +73,68 @@ test("price drops are detected only when the total becomes lower", async () => {
   assert.equal(priceDrop("unknown", 50), null);
 });
 
+test("report shows a book again only for a new or lower delivered price", async () => {
+  const { reportOfferChanges } = await core();
+  const offers = [
+    { book_id: "book-1", total_price: 40, source: "חדש" },
+    { book_id: "book-1", total_price: 45, source: "יקר יותר" },
+    { book_id: "book-2", total_price: 25, source: "ללא היסטוריה" },
+  ];
+  const deliveredReports = [
+    {
+      metadata: {
+        reported_offers: [
+          { book_id: "book-1", total_price: 50 },
+          { book_id: "book-3", total_price: 30 },
+        ],
+      },
+    },
+  ];
+  assert.deepEqual(reportOfferChanges(offers, deliveredReports), [
+    {
+      book_id: "book-1",
+      total_price: 40,
+      source: "חדש",
+      previous_price: 50,
+      savings: 10,
+      change_type: "lower",
+    },
+    {
+      book_id: "book-2",
+      total_price: 25,
+      source: "ללא היסטוריה",
+      previous_price: null,
+      savings: null,
+      change_type: "new",
+    },
+  ]);
+
+  assert.deepEqual(
+    reportOfferChanges([{ book_id: "book-1", total_price: 50 }], deliveredReports),
+    [],
+  );
+  assert.deepEqual(
+    reportOfferChanges([{ book_id: "book-1", total_price: 55 }], deliveredReports),
+    [],
+  );
+});
+
+test("email content omits scanner and cover metrics", () => {
+  const source = fs.readFileSync(
+    path.join(root, "supabase/functions/alerts/index.ts"),
+    "utf8",
+  );
+  const emailBuilder = source.slice(
+    source.indexOf("async function buildReportEmail"),
+    source.indexOf("function runIsDue"),
+  );
+  assert.doesNotMatch(emailBuilder, /coverage|completed_checks|expected_checks/);
+  assert.doesNotMatch(emailBuilder, /כריכות|בדיקות מקור|מצבי מקור|חסם גישה/);
+  assert.match(emailBuilder, /מחיר קודם/);
+  assert.match(emailBuilder, /חיסכון/);
+  assert.match(emailBuilder, /source_url/);
+});
+
 test("deal notifications reject unsuitable offers", async () => {
   const { dealTotal } = await core();
   const suitable = {

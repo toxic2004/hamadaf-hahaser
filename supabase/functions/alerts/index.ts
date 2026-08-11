@@ -6,6 +6,7 @@ import {
   jerusalemParts,
   priceDrop,
   priceDropDedupeKey,
+  reportOfferChanges,
   requestMode,
 } from "./core.mjs";
 import {
@@ -405,112 +406,89 @@ function escapeHtml(value: unknown) {
     .replaceAll("'", "&#39;");
 }
 
-const CHECK_LABELS: Record<string, string> = {
-  found: "נמצאה התאמה",
-  not_found: "לא נמצאה תוצאה",
-  login_required: "נדרשת כניסה",
-  blocked: "המקור חסם גישה",
-  unavailable: "המקור לא היה זמין",
-  manual_required: "נדרשת בדיקה ידנית",
-};
-
 async function buildReportEmail(
   userId: string,
   reportRun: Record<string, any>,
 ) {
-  const [booksResult, sourcesResult, checksResult, offersResult] =
-    await Promise.all([
+  const [booksResult, offersResult, deliveredReportsResult] = await Promise.all(
+    [
       service()
         .from("books")
-        .select("id,title,author,priority,is_required")
+        .select("id,title,author")
         .eq("user_id", userId)
-        .not("status", "in", '("השגתי","סל מחזור")')
-        .order("priority", { ascending: false })
-        .order("title"),
-      service()
-        .from("report_sources")
-        .select("id,label,sort_order")
-        .eq("active", true)
-        .order("sort_order"),
-      service()
-        .from("report_checks")
-        .select("book_id,source_id,status,note,search_url,result_count")
-        .eq("user_id", userId)
-        .eq("run_id", reportRun.id)
-        .eq("scope_active", true),
+        .not("status", "in", '("השגתי","סל מחזור")'),
       service()
         .from("price_offers")
-        .select("book_id,source,listing_title,total_price,url,shipping_known")
+        .select(
+          "book_id,source,listing_title,total_price,source_url,shipping_known,shipping_price,condition,location",
+        )
         .eq("user_id", userId)
         .eq("active", true)
         .eq("is_removed", false)
         .eq("edition_language", "עברית")
         .not("total_price", "is", null)
         .order("total_price", { ascending: true }),
-    ]);
-  const failed = [booksResult, sourcesResult, checksResult, offersResult].find(
+      service()
+        .from("notifications")
+        .select("metadata,emailed_at")
+        .eq("user_id", userId)
+        .in("notification_type", ["דוח בוקר", "דוח ערב"])
+        .not("emailed_at", "is", null)
+        .order("emailed_at", { ascending: false })
+        .limit(180),
+    ],
+  );
+  const failed = [booksResult, offersResult, deliveredReportsResult].find(
     (result) => result.error,
   );
   if (failed?.error) throw failed.error;
   const books = booksResult.data || [];
-  const sources = sourcesResult.data || [];
-  const checks = checksResult.data || [];
   const offers = offersResult.data || [];
-  const checksByBook = new Map<string, Record<string, any>[]>();
-  for (const check of checks) {
-    const rows = checksByBook.get(check.book_id) || [];
-    rows.push(check);
-    checksByBook.set(check.book_id, rows);
-  }
-  const offersByBook = new Map<string, Record<string, any>[]>();
-  for (const offer of offers) {
-    const rows = offersByBook.get(offer.book_id) || [];
-    if (rows.length < 3) rows.push(offer);
-    offersByBook.set(offer.book_id, rows);
-  }
-  const sourceById = new Map<string, Record<string, any>>(
-    sources.map((source) => [source.id, source]),
+  const bookById = new Map<string, Record<string, any>>(
+    books.map((book) => [book.id, book]),
   );
-  const found = checks.filter((check) => check.status === "found").length;
-  const cards = books
-    .map((book) => {
-      const bookChecks = (checksByBook.get(book.id) || []).sort(
-        (left, right) =>
-          Number(sourceById.get(left.source_id)?.sort_order || 99) -
-          Number(sourceById.get(right.source_id)?.sort_order || 99),
-      );
-      const sourceRows = bookChecks
-        .map((check) => {
-          const source = sourceById.get(check.source_id);
-          const label = CHECK_LABELS[check.status] || check.status;
-          const sourceLabel = escapeHtml(source?.label || check.source_id);
-          const linked =
-            check.search_url && check.status === "found"
-              ? `<a href="${escapeHtml(check.search_url)}">${sourceLabel}</a>`
-              : sourceLabel;
-          const detail =
-            check.status === "found" && check.note
-              ? `<small>${escapeHtml(check.note)}</small>`
-              : "";
-          return `<li>${linked}: ${escapeHtml(label)}${detail}</li>`;
-        })
-        .join("");
-      const ranked = offersByBook.get(book.id) || [];
-      const offerRows = ranked.length
-        ? `<div class="offers"><strong>הצעות פעילות:</strong> ${ranked
-            .map((offer) => {
-              const text = `${offer.source}: ${Number(offer.total_price).toFixed(2)} ₪`;
-              return offer.url
-                ? `<a href="${escapeHtml(offer.url)}">${escapeHtml(text)}</a>`
-                : `<span>${escapeHtml(text)}</span>`;
-            })
-            .join("")}</div>`
+  const relevantOffers = reportOfferChanges(
+    offers.filter((offer) => bookById.has(offer.book_id)),
+    deliveredReportsResult.data || [],
+  );
+  const cards = relevantOffers
+    .map((offer: Record<string, any>) => {
+      const book = bookById.get(offer.book_id) || {};
+      const price = Number(offer.total_price).toFixed(2);
+      const isLower = offer.change_type === "lower";
+      const badge = isLower ? "מחיר חדש ונמוך יותר" : "הצעה חדשה";
+      const comparison = isLower
+        ? `<div class="saving"><span>מחיר קודם: ${Number(offer.previous_price).toFixed(2)} ₪</span><strong>חיסכון: ${Number(offer.savings).toFixed(2)} ₪</strong></div>`
         : "";
-      return `<section><h3>${escapeHtml(book.title)}</h3><p>${escapeHtml(book.author || "מחבר לא צוין")}</p>${offerRows}<ul>${sourceRows}</ul></section>`;
+      const shipping = offer.shipping_known
+        ? Number(offer.shipping_price || 0) > 0
+          ? `כולל משלוח בסך ${Number(offer.shipping_price).toFixed(2)} ₪`
+          : "איסוף עצמי או משלוח ללא תוספת ידועה"
+        : "מחיר המשלוח עדיין אינו ידוע";
+      const details = [offer.condition, offer.location]
+        .filter(Boolean)
+        .map((value) => `<span>${escapeHtml(value)}</span>`)
+        .join("");
+      const action = offer.source_url
+        ? `<a class="button" href="${escapeHtml(offer.source_url)}">לצפייה בהצעה</a>`
+        : "";
+      return `<section><div class="badge">${badge}</div><h2>${escapeHtml(book.title || offer.listing_title || "ספר")}</h2><p class="author">${escapeHtml(book.author || "המחבר לא צוין")}</p><div class="price"><small>${offer.shipping_known ? "מחיר כולל" : "מחיר הספר"}</small><strong>${price} ₪</strong></div>${comparison}<div class="facts"><span>${escapeHtml(offer.source)}</span><span>${escapeHtml(shipping)}</span>${details}</div>${action}</section>`;
     })
     .join("");
-  const label = reportRun.report_kind === "morning" ? "דוח בוקר" : "דוח ערב";
-  return `<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;background:#f4f7f5;font-family:Arial,sans-serif;color:#17362d}main{max-width:760px;margin:auto;padding:20px}header{background:#164b3c;color:#fff;border-radius:18px;padding:22px}h1,h3{margin:0}header p,section p{margin:5px 0}.metrics{display:flex;gap:10px;margin:14px 0}.metric,section{background:#fff;border-radius:12px;padding:12px}.metric{flex:1}section{border:1px solid #d8e6e0;margin:12px 0}section h3,a{color:#176b55}.offers{background:#f0f8f5;padding:9px;border-radius:9px}.offers a,.offers span{margin-left:10px}ul{columns:2;padding-right:20px}li{margin:3px 0}small{display:block;color:#52665f}footer{text-align:center;color:#60756e;padding:18px}@media(max-width:600px){.metrics{display:block}.metric{margin:7px 0}ul{columns:1}}</style></head><body><main><header><h1>${label} של המדף החסר</h1><p>${escapeHtml(reportRun.local_date)}. כיסוי מלא של ${reportRun.completed_checks} מתוך ${reportRun.expected_checks} בדיקות.</p></header><div class="metrics"><div class="metric"><strong>${books.length}</strong><br>ספרים פעילים</div><div class="metric"><strong>${found}</strong><br>התאמות מקור</div><div class="metric"><strong>100%</strong><br>מצבי מקור</div></div>${cards}<footer>הדוח מבוסס על טבלת books של המדף החסר. מקורות שחוסמים גישה מסומנים במפורש ולא נעקפו.</footer></main></body></html>`;
+  const emptyState = `<section class="empty"><h2>לא נמצאה הצעה חדשה או זולה יותר</h2><p>נמשיך לעקוב ונעדכן כאשר תופיע הצעה שכדאי לבדוק.</p></section>`;
+  const title = relevantOffers.length
+    ? `מצאנו ${relevantOffers.length} הצעות שכדאי לבדוק`
+    : "אין שינוי במחירים כרגע";
+  const emailHtml = `<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;background:#07111f;font-family:Arial,sans-serif;color:#eaf2ff}main{max-width:680px;margin:auto;padding:18px}header{background:linear-gradient(135deg,#122746,#0e756d);border:1px solid #2a5278;border-radius:22px;padding:28px;box-shadow:0 18px 50px #0005}header .brand{color:#71f5cf;font-size:14px;font-weight:700;letter-spacing:.5px}h1{font-size:30px;line-height:1.2;margin:8px 0 0}section{background:#0f1d30;border:1px solid #263b58;border-radius:20px;margin:16px 0;padding:22px;box-shadow:0 12px 34px #0004}h2{font-size:23px;margin:10px 0 3px}.author{color:#a9bad2;margin:0 0 18px}.badge{display:inline-block;background:#123e42;color:#77f3d1;border:1px solid #23645f;border-radius:999px;padding:6px 11px;font-size:13px;font-weight:700}.price{background:#0a1525;border-radius:16px;padding:16px;margin:8px 0}.price small{display:block;color:#8ca1bc}.price strong{display:block;color:#fff;font-size:34px;margin-top:3px}.saving{display:flex;justify-content:space-between;gap:12px;background:#112d2c;color:#a6eedc;border-radius:12px;padding:11px 13px;margin:10px 0}.facts{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0}.facts span{background:#172942;color:#c6d4e8;border-radius:9px;padding:7px 10px;font-size:14px}.button{display:block;background:#61e7c1;color:#06231c;text-align:center;text-decoration:none;font-weight:800;border-radius:12px;padding:13px}.empty{text-align:center;padding:34px 22px}.empty p{color:#a9bad2;margin-bottom:0}@media(max-width:600px){main{padding:10px}header,section{border-radius:16px;padding:18px}h1{font-size:25px}.price strong{font-size:30px}.saving{display:block}.saving strong{display:block;margin-top:5px}}</style></head><body><main><header><div class="brand">המדף החסר</div><h1>${title}</h1></header>${cards || emptyState}</main></body></html>`;
+  return {
+    emailHtml,
+    reportedOffers: relevantOffers.map((offer: Record<string, any>) => ({
+      book_id: offer.book_id,
+      total_price: Number(offer.total_price),
+      source: offer.source,
+      source_url: offer.source_url || null,
+    })),
+  };
 }
 
 function runIsDue(
@@ -626,12 +604,17 @@ async function finalizeScheduledRun(
       Number(settings.immediate_deal_threshold || 70),
   ).length;
   const reportLabel = kind === "בוקר" ? "דוח בוקר" : "דוח ערב";
-  const emailHtml = await buildReportEmail(userId, reportRunDetails);
+  const { emailHtml, reportedOffers } = await buildReportEmail(
+    userId,
+    reportRunDetails,
+  );
   const report = await insertNotification({
     user_id: userId,
     notification_type: reportLabel,
     title: `${reportLabel} של המדף החסר`,
-    body: `הושלם כיסוי מלא עבור ${reportRunDetails.expected_books} ספרים ו ${reportRunDetails.expected_checks} בדיקות מקור. ${offers?.length || 0} הצעות פעילות. ${worthwhile} עסקאות מעל הסף.`,
+    body: reportedOffers.length
+      ? `נמצאו ${reportedOffers.length} הצעות חדשות או זולות יותר.`
+      : "לא נמצאה הצעה חדשה או זולה יותר.",
     dedupe_key: `complete_report:${reportRunDetails.report_kind}:${reportRunDetails.local_date}`,
     metadata: {
       report_run_id: reportRunDetails.id,
@@ -642,6 +625,7 @@ async function finalizeScheduledRun(
       active_offers: offers?.length || 0,
       worthwhile,
       due: due.length,
+      reported_offers: reportedOffers,
       email_delivery: "gmail_queue",
       email_html: emailHtml,
     },
