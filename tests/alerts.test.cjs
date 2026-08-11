@@ -34,6 +34,7 @@ test("missing settings default to reports at 07:00 and 21:00", () => {
 
   assert.match(source, /morning_report_hour: 7/);
   assert.match(source, /evening_check_hour: 21/);
+  assert.match(source, /email_enabled: true/);
   assert.doesNotMatch(source, /evening_check_hour: 19/);
 });
 
@@ -133,6 +134,8 @@ test("email content omits scanner and cover metrics", () => {
   assert.match(emailBuilder, /מחיר קודם/);
   assert.match(emailBuilder, /חיסכון/);
   assert.match(emailBuilder, /source_url/);
+  assert.match(emailBuilder, /bundledNotificationIds/);
+  assert.match(emailBuilder, /כדאי לבדוק מחדש אם ההצעה עדיין זמינה/);
 });
 
 test("deal notifications reject unsuitable offers", async () => {

@@ -82,7 +82,7 @@ async function settingsFor(userId: string) {
       morning_report_hour: 7,
       evening_check_hour: 21,
       immediate_deal_threshold: 70,
-      email_enabled: false,
+      email_enabled: true,
       email_address: null,
     }
   );
@@ -410,37 +410,51 @@ async function buildReportEmail(
   userId: string,
   reportRun: Record<string, any>,
 ) {
-  const [booksResult, offersResult, deliveredReportsResult] = await Promise.all(
-    [
-      service()
-        .from("books")
-        .select("id,title,author")
-        .eq("user_id", userId)
-        .not("status", "in", '("השגתי","סל מחזור")'),
-      service()
-        .from("price_offers")
-        .select(
-          "book_id,source,listing_title,total_price,source_url,shipping_known,shipping_price,condition,location",
-        )
-        .eq("user_id", userId)
-        .eq("active", true)
-        .eq("is_removed", false)
-        .eq("edition_language", "עברית")
-        .not("total_price", "is", null)
-        .order("total_price", { ascending: true }),
-      service()
-        .from("notifications")
-        .select("metadata,emailed_at")
-        .eq("user_id", userId)
-        .in("notification_type", ["דוח בוקר", "דוח ערב"])
-        .not("emailed_at", "is", null)
-        .order("emailed_at", { ascending: false })
-        .limit(180),
-    ],
-  );
-  const failed = [booksResult, offersResult, deliveredReportsResult].find(
-    (result) => result.error,
-  );
+  const [
+    booksResult,
+    offersResult,
+    deliveredReportsResult,
+    pendingAlertsResult,
+  ] = await Promise.all([
+    service()
+      .from("books")
+      .select("id,title,author")
+      .eq("user_id", userId)
+      .not("status", "in", '("השגתי","סל מחזור")'),
+    service()
+      .from("price_offers")
+      .select(
+        "book_id,source,listing_title,total_price,source_url,shipping_known,shipping_price,condition,location",
+      )
+      .eq("user_id", userId)
+      .eq("active", true)
+      .eq("is_removed", false)
+      .eq("edition_language", "עברית")
+      .not("total_price", "is", null)
+      .order("total_price", { ascending: true }),
+    service()
+      .from("notifications")
+      .select("metadata,emailed_at")
+      .eq("user_id", userId)
+      .in("notification_type", ["דוח בוקר", "דוח ערב"])
+      .not("emailed_at", "is", null)
+      .order("emailed_at", { ascending: false })
+      .limit(180),
+    service()
+      .from("notifications")
+      .select("id,book_id,notification_type,title,body,metadata,created_at")
+      .eq("user_id", userId)
+      .is("emailed_at", null)
+      .not("notification_type", "in", '("דוח בוקר","דוח ערב")')
+      .order("created_at", { ascending: true })
+      .limit(100),
+  ]);
+  const failed = [
+    booksResult,
+    offersResult,
+    deliveredReportsResult,
+    pendingAlertsResult,
+  ].find((result) => result.error);
   if (failed?.error) throw failed.error;
   const books = booksResult.data || [];
   const offers = offersResult.data || [];
@@ -451,6 +465,7 @@ async function buildReportEmail(
     offers.filter((offer) => bookById.has(offer.book_id)),
     deliveredReportsResult.data || [],
   );
+  const pendingAlerts = pendingAlertsResult.data || [];
   const cards = relevantOffers
     .map((offer: Record<string, any>) => {
       const book = bookById.get(offer.book_id) || {};
@@ -475,13 +490,42 @@ async function buildReportEmail(
       return `<section><div class="badge">${badge}</div><h2>${escapeHtml(book.title || offer.listing_title || "ספר")}</h2><p class="author">${escapeHtml(book.author || "המחבר לא צוין")}</p><div class="price"><small>${offer.shipping_known ? "מחיר כולל" : "מחיר הספר"}</small><strong>${price} ₪</strong></div>${comparison}<div class="facts"><span>${escapeHtml(offer.source)}</span><span>${escapeHtml(shipping)}</span>${details}</div>${action}</section>`;
     })
     .join("");
+  const groupedAlerts = new Map<string, Record<string, any>>();
+  for (const alert of pendingAlerts) {
+    const key = alert.book_id || alert.id;
+    const group = groupedAlerts.get(key) || {
+      book: bookById.get(alert.book_id) || {},
+      alerts: [],
+      sources: new Set<string>(),
+    };
+    group.alerts.push(alert);
+    if (alert.metadata?.source) group.sources.add(alert.metadata.source);
+    groupedAlerts.set(key, group);
+  }
+  const alertCards = [...groupedAlerts.values()]
+    .map((group) => {
+      const important = group.alerts.find(
+        (alert: Record<string, any>) =>
+          alert.notification_type === "עסקה משתלמת" ||
+          alert.notification_type === "ירידת מחיר",
+      );
+      const body = important?.body || "כדאי לבדוק מחדש אם ההצעה עדיין זמינה.";
+      const sources = [...group.sources]
+        .map((source) => `<span>${escapeHtml(source)}</span>`)
+        .join("");
+      return `<section class="alert"><div class="badge">התראה</div><h2>${escapeHtml(group.book.title || important?.title || "עדכון להצעה")}</h2><p class="alertText">${escapeHtml(body)}</p>${sources ? `<div class="facts">${sources}</div>` : ""}</section>`;
+    })
+    .join("");
   const emptyState = `<section class="empty"><h2>לא נמצאה הצעה חדשה או זולה יותר</h2><p>נמשיך לעקוב ונעדכן כאשר תופיע הצעה שכדאי לבדוק.</p></section>`;
   const title = relevantOffers.length
     ? `מצאנו ${relevantOffers.length} הצעות שכדאי לבדוק`
-    : "אין שינוי במחירים כרגע";
-  const emailHtml = `<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;background:#07111f;font-family:Arial,sans-serif;color:#eaf2ff}main{max-width:680px;margin:auto;padding:18px}header{background:linear-gradient(135deg,#122746,#0e756d);border:1px solid #2a5278;border-radius:22px;padding:28px;box-shadow:0 18px 50px #0005}header .brand{color:#71f5cf;font-size:14px;font-weight:700;letter-spacing:.5px}h1{font-size:30px;line-height:1.2;margin:8px 0 0}section{background:#0f1d30;border:1px solid #263b58;border-radius:20px;margin:16px 0;padding:22px;box-shadow:0 12px 34px #0004}h2{font-size:23px;margin:10px 0 3px}.author{color:#a9bad2;margin:0 0 18px}.badge{display:inline-block;background:#123e42;color:#77f3d1;border:1px solid #23645f;border-radius:999px;padding:6px 11px;font-size:13px;font-weight:700}.price{background:#0a1525;border-radius:16px;padding:16px;margin:8px 0}.price small{display:block;color:#8ca1bc}.price strong{display:block;color:#fff;font-size:34px;margin-top:3px}.saving{display:flex;justify-content:space-between;gap:12px;background:#112d2c;color:#a6eedc;border-radius:12px;padding:11px 13px;margin:10px 0}.facts{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0}.facts span{background:#172942;color:#c6d4e8;border-radius:9px;padding:7px 10px;font-size:14px}.button{display:block;background:#61e7c1;color:#06231c;text-align:center;text-decoration:none;font-weight:800;border-radius:12px;padding:13px}.empty{text-align:center;padding:34px 22px}.empty p{color:#a9bad2;margin-bottom:0}@media(max-width:600px){main{padding:10px}header,section{border-radius:16px;padding:18px}h1{font-size:25px}.price strong{font-size:30px}.saving{display:block}.saving strong{display:block;margin-top:5px}}</style></head><body><main><header><div class="brand">המדף החסר</div><h1>${title}</h1></header>${cards || emptyState}</main></body></html>`;
+    : pendingAlerts.length
+      ? "יש עדכונים שכדאי לבדוק"
+      : "אין שינוי במחירים כרגע";
+  const emailHtml = `<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;background:#07111f;font-family:Arial,sans-serif;color:#eaf2ff}main{max-width:680px;margin:auto;padding:18px}header{background:linear-gradient(135deg,#122746,#0e756d);border:1px solid #2a5278;border-radius:22px;padding:28px;box-shadow:0 18px 50px #0005}header .brand{color:#71f5cf;font-size:14px;font-weight:700;letter-spacing:.5px}h1{font-size:30px;line-height:1.2;margin:8px 0 0}section{background:#0f1d30;border:1px solid #263b58;border-radius:20px;margin:16px 0;padding:22px;box-shadow:0 12px 34px #0004}h2{font-size:23px;margin:10px 0 3px}.author{color:#a9bad2;margin:0 0 18px}.alertText{color:#d7e3f3;line-height:1.6}.badge{display:inline-block;background:#123e42;color:#77f3d1;border:1px solid #23645f;border-radius:999px;padding:6px 11px;font-size:13px;font-weight:700}.price{background:#0a1525;border-radius:16px;padding:16px;margin:8px 0}.price small{display:block;color:#8ca1bc}.price strong{display:block;color:#fff;font-size:34px;margin-top:3px}.saving{display:flex;justify-content:space-between;gap:12px;background:#112d2c;color:#a6eedc;border-radius:12px;padding:11px 13px;margin:10px 0}.facts{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0}.facts span{background:#172942;color:#c6d4e8;border-radius:9px;padding:7px 10px;font-size:14px}.button{display:block;background:#61e7c1;color:#06231c;text-align:center;text-decoration:none;font-weight:800;border-radius:12px;padding:13px}.empty{text-align:center;padding:34px 22px}.empty p{color:#a9bad2;margin-bottom:0}@media(max-width:600px){main{padding:10px}header,section{border-radius:16px;padding:18px}h1{font-size:25px}.price strong{font-size:30px}.saving{display:block}.saving strong{display:block;margin-top:5px}}</style></head><body><main><header><div class="brand">המדף החסר</div><h1>${title}</h1></header>${cards || (alertCards ? "" : emptyState)}${alertCards}</main></body></html>`;
   return {
     emailHtml,
+    bundledNotificationIds: pendingAlerts.map((alert) => alert.id),
     reportedOffers: relevantOffers.map((offer: Record<string, any>) => ({
       book_id: offer.book_id,
       total_price: Number(offer.total_price),
@@ -604,10 +648,8 @@ async function finalizeScheduledRun(
       Number(settings.immediate_deal_threshold || 70),
   ).length;
   const reportLabel = kind === "בוקר" ? "דוח בוקר" : "דוח ערב";
-  const { emailHtml, reportedOffers } = await buildReportEmail(
-    userId,
-    reportRunDetails,
-  );
+  const { emailHtml, reportedOffers, bundledNotificationIds } =
+    await buildReportEmail(userId, reportRunDetails);
   const report = await insertNotification({
     user_id: userId,
     notification_type: reportLabel,
@@ -626,6 +668,7 @@ async function finalizeScheduledRun(
       worthwhile,
       due: due.length,
       reported_offers: reportedOffers,
+      bundled_notification_ids: bundledNotificationIds,
       email_delivery: "gmail_queue",
       email_html: emailHtml,
     },
