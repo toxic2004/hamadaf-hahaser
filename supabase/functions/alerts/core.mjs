@@ -31,6 +31,56 @@ export function priceDrop(previousValue, currentValue) {
   return { previous, current };
 }
 
+export function reportOfferChanges(offers, deliveredReports = []) {
+  const previousBestByBook = new Map();
+  for (const report of deliveredReports || []) {
+    const reportedOffers = Array.isArray(report?.metadata?.reported_offers)
+      ? report.metadata.reported_offers
+      : [];
+    for (const offer of reportedOffers) {
+      const price = Number(offer?.total_price);
+      if (!offer?.book_id || !Number.isFinite(price)) continue;
+      const previous = previousBestByBook.get(offer.book_id);
+      if (previous === undefined || price < previous) {
+        previousBestByBook.set(offer.book_id, price);
+      }
+    }
+  }
+
+  const currentBestByBook = new Map();
+  for (const offer of offers || []) {
+    const price = Number(offer?.total_price);
+    if (!offer?.book_id || !Number.isFinite(price)) continue;
+    const current = currentBestByBook.get(offer.book_id);
+    if (!current || price < Number(current.total_price)) {
+      currentBestByBook.set(offer.book_id, offer);
+    }
+  }
+
+  return [...currentBestByBook.values()]
+    .map((offer) => {
+      const currentPrice = Number(offer.total_price);
+      const previousPrice = previousBestByBook.get(offer.book_id);
+      if (previousPrice !== undefined && currentPrice >= previousPrice) {
+        return null;
+      }
+      return {
+        ...offer,
+        previous_price: previousPrice ?? null,
+        savings:
+          previousPrice === undefined ? null : previousPrice - currentPrice,
+        change_type: previousPrice === undefined ? "new" : "lower",
+      };
+    })
+    .filter(Boolean)
+    .sort((left, right) => {
+      if (left.change_type !== right.change_type) {
+        return left.change_type === "lower" ? -1 : 1;
+      }
+      return Number(left.total_price) - Number(right.total_price);
+    });
+}
+
 export function dealTotal(offer, threshold) {
   const total = offer.total_price === null ? null : Number(offer.total_price);
   if (

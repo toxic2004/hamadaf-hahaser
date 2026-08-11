@@ -69,7 +69,8 @@ async function loadSettings() {
   $("threshold").value = data?.immediate_deal_threshold ?? 70;
   $("morningReportHour").value = hourToTime(data?.morning_report_hour, 7);
   $("eveningReportHour").value = hourToTime(data?.evening_check_hour, 21);
-  $("emailEnabled").checked = Boolean(data?.email_enabled);
+  $("emailEnabled").checked = true;
+  $("emailEnabled").disabled = true;
   $("notificationEmail").value = data?.email_address || user.email || "";
 }
 
@@ -86,7 +87,7 @@ async function saveSettings() {
       "שעות דוח הבוקר ודוח הערב חייבות להיות שונות.";
     return;
   }
-  if ($("emailEnabled").checked && !$("notificationEmail").value.trim()) {
+  if (!$("notificationEmail").value.trim()) {
     $("settingsMessage").textContent = "צריך להזין כתובת מייל.";
     return;
   }
@@ -96,7 +97,7 @@ async function saveSettings() {
     morning_report_hour: morningHour,
     evening_check_hour: eveningHour,
     immediate_deal_threshold: threshold,
-    email_enabled: $("emailEnabled").checked,
+    email_enabled: true,
     email_address: $("notificationEmail").value.trim() || null,
     updated_at: new Date().toISOString(),
   });

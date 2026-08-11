@@ -6,14 +6,23 @@ import {
   jerusalemParts,
   priceDrop,
   priceDropDedupeKey,
+  reportOfferChanges,
   requestMode,
-  scheduledKinds,
 } from "./core.mjs";
+import {
+  classifySearchResponse,
+  nextPreparationTarget,
+  sourcePlan,
+} from "./scanner-core.mjs";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") || "";
 const MAX_BODY_BYTES = 16_384;
+const SCAN_BATCH_SIZE = 80;
+const SCAN_CONCURRENCY = 10;
+const FETCH_TIMEOUT_MS = 6_000;
+const MAX_SCAN_ATTEMPTS = 3;
 let serviceClient: ReturnType<typeof createClient> | null = null;
 
 function service() {
@@ -73,7 +82,7 @@ async function settingsFor(userId: string) {
       morning_report_hour: 7,
       evening_check_hour: 21,
       immediate_deal_threshold: 70,
-      email_enabled: false,
+      email_enabled: true,
       email_address: null,
     }
   );
@@ -172,60 +181,423 @@ async function processOfferMode(request: Request, body: Record<string, any>) {
   });
 }
 
-async function processScheduledUser(
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  mapper: (item: T) => Promise<R>,
+) {
+  const results = new Array<R>(items.length);
+  let cursor = 0;
+  const workers = Array.from(
+    { length: Math.min(concurrency, items.length) },
+    async () => {
+      while (cursor < items.length) {
+        const index = cursor;
+        cursor += 1;
+        results[index] = await mapper(items[index]);
+      }
+    },
+  );
+  await Promise.all(workers);
+  return results;
+}
+
+async function scanCheck(
+  check: Record<string, any>,
+  book: Record<string, any>,
+) {
+  const plan = sourcePlan(check.source_id, book);
+  const attemptCount = Number(check.attempt_count || 0) + 1;
+  const base = {
+    id: check.id,
+    result_count: Number(plan.resultCount || 0),
+    note: plan.note || null,
+    search_url: plan.searchUrl || null,
+    last_error: null,
+    attempt_count: attemptCount,
+    next_attempt_at: null,
+  };
+  if (plan.status !== "pending") return { ...base, status: plan.status };
+  try {
+    const response = await fetch(plan.searchUrl, {
+      method: "GET",
+      redirect: "follow",
+      headers: {
+        accept: "text/html,application/xhtml+xml,application/json;q=0.8",
+        "accept-language": "he-IL,he;q=0.9,en;q=0.6",
+        "user-agent":
+          "HamadafHahaserReportBot/1.0 (+read-only availability check)",
+      },
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+    const body = await response.text();
+    const classified = classifySearchResponse({
+      sourceId: check.source_id,
+      title: book.title,
+      status: response.status,
+      contentType: response.headers.get("content-type") || "",
+      body,
+    });
+    if (
+      classified.status === "temporary_error" &&
+      attemptCount < MAX_SCAN_ATTEMPTS
+    ) {
+      return {
+        ...base,
+        ...classified,
+        attempt_count: attemptCount,
+        search_url: plan.searchUrl,
+        next_attempt_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+      };
+    }
+    if (classified.status === "temporary_error") {
+      return {
+        ...base,
+        status: "unavailable",
+        note: `${classified.note} שלושה ניסיונות לא הצליחו.`,
+        search_url: plan.searchUrl,
+        last_error: classified.note,
+      };
+    }
+    return {
+      ...base,
+      ...classified,
+      attempt_count: attemptCount,
+      search_url: plan.searchUrl,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "network error";
+    if (attemptCount < MAX_SCAN_ATTEMPTS) {
+      return {
+        ...base,
+        status: "temporary_error",
+        note: "הבדיקה נכשלה זמנית ותבוצע שוב.",
+        last_error: message,
+        next_attempt_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+      };
+    }
+    return {
+      ...base,
+      status: "unavailable",
+      note: "המקור לא היה זמין לאחר שלושה ניסיונות.",
+      last_error: message,
+    };
+  }
+}
+
+async function ensureReportRun(
   userId: string,
   localDate: string,
-  kind: "בוקר" | "ערב",
+  localHour: number,
+  settings: Record<string, any>,
 ) {
-  const run = await service()
+  const target = nextPreparationTarget(localDate, localHour, settings);
+  const created = await service().rpc("start_report_run_for_user_on_date", {
+    target_user: userId,
+    target_kind: target.kind,
+    target_local_date: target.localDate,
+  });
+  if (created.error) throw created.error;
+  const synced = await service().rpc("sync_report_run_scope", {
+    target_run: created.data,
+    target_user: userId,
+  });
+  if (synced.error) throw synced.error;
+  return { ...target, runId: created.data as string };
+}
+
+async function scanOldestRun(userId: string) {
+  const runs = await service()
+    .from("report_runs")
+    .select("*")
+    .eq("user_id", userId)
+    .eq("status", "running")
+    .order("local_date", { ascending: true })
+    .order("started_at", { ascending: true })
+    .limit(4);
+  if (runs.error) throw runs.error;
+  const run = (runs.data || []).sort((left, right) => {
+    const dateOrder = String(left.local_date).localeCompare(
+      String(right.local_date),
+    );
+    if (dateOrder) return dateOrder;
+    const rank = { morning: 0, evening: 1, manual: 2 } as Record<
+      string,
+      number
+    >;
+    return (rank[left.report_kind] ?? 3) - (rank[right.report_kind] ?? 3);
+  })[0];
+  if (!run) return { runId: null, processed: 0 };
+
+  const synced = await service().rpc("sync_report_run_scope", {
+    target_run: run.id,
+    target_user: userId,
+  });
+  if (synced.error) throw synced.error;
+
+  const pending = await service()
+    .from("report_checks")
+    .select("id,book_id,source_id,status,attempt_count,next_attempt_at")
+    .eq("user_id", userId)
+    .eq("run_id", run.id)
+    .eq("scope_active", true)
+    .in("status", ["pending", "temporary_error"])
+    .order("next_attempt_at", { ascending: true, nullsFirst: true })
+    .order("created_at", { ascending: true })
+    .limit(SCAN_BATCH_SIZE * 3);
+  if (pending.error) throw pending.error;
+  const now = Date.now();
+  const due: Record<string, any>[] = (
+    (pending.data || []) as Record<string, any>[]
+  )
+    .filter(
+      (check) =>
+        !check.next_attempt_at ||
+        new Date(check.next_attempt_at).getTime() <= now,
+    )
+    .slice(0, SCAN_BATCH_SIZE);
+  if (!due.length) return { runId: run.id, processed: 0 };
+
+  const bookIds = [...new Set(due.map((check) => check.book_id))];
+  const books = await service()
+    .from("books")
+    .select("id,title,author,status,user_id")
+    .eq("user_id", userId)
+    .in("id", bookIds);
+  if (books.error) throw books.error;
+  const byId = new Map<string, Record<string, any>>(
+    (books.data || []).map((book) => [book.id, book]),
+  );
+  const results = await mapWithConcurrency(
+    due,
+    SCAN_CONCURRENCY,
+    async (check) => {
+      const book = byId.get(check.book_id);
+      if (!book) {
+        return {
+          id: check.id,
+          status: "unavailable",
+          result_count: 0,
+          note: "הספר אינו פעיל עוד במקור האמת.",
+          search_url: null,
+          last_error: null,
+          attempt_count: Number(check.attempt_count || 0) + 1,
+          next_attempt_at: null,
+        };
+      }
+      return await scanCheck(check, book);
+    },
+  );
+  const applied = await service().rpc("apply_report_check_results", {
+    target_run: run.id,
+    target_user: userId,
+    result_rows: results,
+  });
+  if (applied.error) throw applied.error;
+  return { runId: run.id, processed: results.length };
+}
+
+function escapeHtml(value: unknown) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+async function buildReportEmail(
+  userId: string,
+  reportRun: Record<string, any>,
+) {
+  const [
+    booksResult,
+    offersResult,
+    deliveredReportsResult,
+    pendingAlertsResult,
+  ] = await Promise.all([
+    service()
+      .from("books")
+      .select("id,title,author")
+      .eq("user_id", userId)
+      .not("status", "in", '("השגתי","סל מחזור")'),
+    service()
+      .from("price_offers")
+      .select(
+        "book_id,source,listing_title,total_price,source_url,shipping_known,shipping_price,condition,location",
+      )
+      .eq("user_id", userId)
+      .eq("active", true)
+      .eq("is_removed", false)
+      .eq("edition_language", "עברית")
+      .not("total_price", "is", null)
+      .order("total_price", { ascending: true }),
+    service()
+      .from("notifications")
+      .select("metadata,emailed_at")
+      .eq("user_id", userId)
+      .in("notification_type", ["דוח בוקר", "דוח ערב"])
+      .not("emailed_at", "is", null)
+      .order("emailed_at", { ascending: false })
+      .limit(180),
+    service()
+      .from("notifications")
+      .select("id,book_id,notification_type,title,body,metadata,created_at")
+      .eq("user_id", userId)
+      .is("emailed_at", null)
+      .not("notification_type", "in", '("דוח בוקר","דוח ערב")')
+      .order("created_at", { ascending: true })
+      .limit(100),
+  ]);
+  const failed = [
+    booksResult,
+    offersResult,
+    deliveredReportsResult,
+    pendingAlertsResult,
+  ].find((result) => result.error);
+  if (failed?.error) throw failed.error;
+  const books = booksResult.data || [];
+  const offers = offersResult.data || [];
+  const bookById = new Map<string, Record<string, any>>(
+    books.map((book) => [book.id, book]),
+  );
+  const relevantOffers = reportOfferChanges(
+    offers.filter((offer) => bookById.has(offer.book_id)),
+    deliveredReportsResult.data || [],
+  );
+  const pendingAlerts = pendingAlertsResult.data || [];
+  const cards = relevantOffers
+    .map((offer: Record<string, any>) => {
+      const book = bookById.get(offer.book_id) || {};
+      const price = Number(offer.total_price).toFixed(2);
+      const isLower = offer.change_type === "lower";
+      const badge = isLower ? "מחיר חדש ונמוך יותר" : "הצעה חדשה";
+      const comparison = isLower
+        ? `<div class="saving"><span>מחיר קודם: ${Number(offer.previous_price).toFixed(2)} ₪</span><strong>חיסכון: ${Number(offer.savings).toFixed(2)} ₪</strong></div>`
+        : "";
+      const shipping = offer.shipping_known
+        ? Number(offer.shipping_price || 0) > 0
+          ? `כולל משלוח בסך ${Number(offer.shipping_price).toFixed(2)} ₪`
+          : "איסוף עצמי או משלוח ללא תוספת ידועה"
+        : "מחיר המשלוח עדיין אינו ידוע";
+      const details = [offer.condition, offer.location]
+        .filter(Boolean)
+        .map((value) => `<span>${escapeHtml(value)}</span>`)
+        .join("");
+      const action = offer.source_url
+        ? `<a class="button" href="${escapeHtml(offer.source_url)}">לצפייה בהצעה</a>`
+        : "";
+      return `<section><div class="badge">${badge}</div><h2>${escapeHtml(book.title || offer.listing_title || "ספר")}</h2><p class="author">${escapeHtml(book.author || "המחבר לא צוין")}</p><div class="price"><small>${offer.shipping_known ? "מחיר כולל" : "מחיר הספר"}</small><strong>${price} ₪</strong></div>${comparison}<div class="facts"><span>${escapeHtml(offer.source)}</span><span>${escapeHtml(shipping)}</span>${details}</div>${action}</section>`;
+    })
+    .join("");
+  const groupedAlerts = new Map<string, Record<string, any>>();
+  for (const alert of pendingAlerts) {
+    const key = alert.book_id || alert.id;
+    const group = groupedAlerts.get(key) || {
+      book: bookById.get(alert.book_id) || {},
+      alerts: [],
+      sources: new Set<string>(),
+    };
+    group.alerts.push(alert);
+    if (alert.metadata?.source) group.sources.add(alert.metadata.source);
+    groupedAlerts.set(key, group);
+  }
+  const alertCards = [...groupedAlerts.values()]
+    .map((group) => {
+      const important = group.alerts.find(
+        (alert: Record<string, any>) =>
+          alert.notification_type === "עסקה משתלמת" ||
+          alert.notification_type === "ירידת מחיר",
+      );
+      const body = important?.body || "כדאי לבדוק מחדש אם ההצעה עדיין זמינה.";
+      const sources = [...group.sources]
+        .map((source) => `<span>${escapeHtml(source)}</span>`)
+        .join("");
+      return `<section class="alert"><div class="badge">התראה</div><h2>${escapeHtml(group.book.title || important?.title || "עדכון להצעה")}</h2><p class="alertText">${escapeHtml(body)}</p>${sources ? `<div class="facts">${sources}</div>` : ""}</section>`;
+    })
+    .join("");
+  const emptyState = `<section class="empty"><h2>לא נמצאה הצעה חדשה או זולה יותר</h2><p>נמשיך לעקוב ונעדכן כאשר תופיע הצעה שכדאי לבדוק.</p></section>`;
+  const title = relevantOffers.length
+    ? `מצאנו ${relevantOffers.length} הצעות שכדאי לבדוק`
+    : pendingAlerts.length
+      ? "יש עדכונים שכדאי לבדוק"
+      : "אין שינוי במחירים כרגע";
+  const emailHtml = `<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;background:#07111f;font-family:Arial,sans-serif;color:#eaf2ff}main{max-width:680px;margin:auto;padding:18px}header{background:linear-gradient(135deg,#122746,#0e756d);border:1px solid #2a5278;border-radius:22px;padding:28px;box-shadow:0 18px 50px #0005}header .brand{color:#71f5cf;font-size:14px;font-weight:700;letter-spacing:.5px}h1{font-size:30px;line-height:1.2;margin:8px 0 0}section{background:#0f1d30;border:1px solid #263b58;border-radius:20px;margin:16px 0;padding:22px;box-shadow:0 12px 34px #0004}h2{font-size:23px;margin:10px 0 3px}.author{color:#a9bad2;margin:0 0 18px}.alertText{color:#d7e3f3;line-height:1.6}.badge{display:inline-block;background:#123e42;color:#77f3d1;border:1px solid #23645f;border-radius:999px;padding:6px 11px;font-size:13px;font-weight:700}.price{background:#0a1525;border-radius:16px;padding:16px;margin:8px 0}.price small{display:block;color:#8ca1bc}.price strong{display:block;color:#fff;font-size:34px;margin-top:3px}.saving{display:flex;justify-content:space-between;gap:12px;background:#112d2c;color:#a6eedc;border-radius:12px;padding:11px 13px;margin:10px 0}.facts{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0}.facts span{background:#172942;color:#c6d4e8;border-radius:9px;padding:7px 10px;font-size:14px}.button{display:block;background:#61e7c1;color:#06231c;text-align:center;text-decoration:none;font-weight:800;border-radius:12px;padding:13px}.empty{text-align:center;padding:34px 22px}.empty p{color:#a9bad2;margin-bottom:0}@media(max-width:600px){main{padding:10px}header,section{border-radius:16px;padding:18px}h1{font-size:25px}.price strong{font-size:30px}.saving{display:block}.saving strong{display:block;margin-top:5px}}</style></head><body><main><header><div class="brand">המדף החסר</div><h1>${title}</h1></header>${cards || (alertCards ? "" : emptyState)}${alertCards}</main></body></html>`;
+  return {
+    emailHtml,
+    bundledNotificationIds: pendingAlerts.map((alert) => alert.id),
+    reportedOffers: relevantOffers.map((offer: Record<string, any>) => ({
+      book_id: offer.book_id,
+      total_price: Number(offer.total_price),
+      source: offer.source,
+      source_url: offer.source_url || null,
+    })),
+  };
+}
+
+function runIsDue(
+  run: Record<string, any>,
+  localDate: string,
+  localHour: number,
+  settings: Record<string, any>,
+) {
+  if (String(run.local_date) < localDate) return true;
+  if (String(run.local_date) > localDate) return false;
+  const dueHour =
+    run.report_kind === "morning"
+      ? Number(settings.morning_report_hour ?? 7)
+      : Number(settings.evening_check_hour ?? 21);
+  return localHour >= dueHour;
+}
+
+async function finalizeScheduledRun(
+  userId: string,
+  reportRunDetails: Record<string, any>,
+) {
+  const kind = reportRunDetails.report_kind === "morning" ? "בוקר" : "ערב";
+  const deliveryRun = await service()
     .from("price_scan_runs")
     .upsert(
-      { user_id: userId, local_date: localDate, run_kind: kind },
+      {
+        user_id: userId,
+        local_date: reportRunDetails.local_date,
+        run_kind: kind,
+      },
       { onConflict: "user_id,local_date,run_kind", ignoreDuplicates: true },
     )
     .select("id,completed_at");
-  if (run.error) throw run.error;
-  let runId = run.data?.[0]?.id;
+  if (deliveryRun.error) throw deliveryRun.error;
+  let runId = deliveryRun.data?.[0]?.id;
   if (!runId) {
     const existing = await service()
       .from("price_scan_runs")
       .select("id,completed_at")
       .eq("user_id", userId)
-      .eq("local_date", localDate)
+      .eq("local_date", reportRunDetails.local_date)
       .eq("run_kind", kind)
       .single();
     if (existing.error) throw existing.error;
-    if (existing.data.completed_at) {
-      return {
-        skipped: true,
-        created: 0,
-        emailDelivery: "gmail_queue",
-      };
-    }
+    if (existing.data.completed_at) return { skipped: true, created: 0 };
     runId = existing.data.id;
-    const restart = await service()
-      .from("price_scan_runs")
-      .update({ started_at: new Date().toISOString(), result: {} })
-      .eq("id", runId)
-      .eq("user_id", userId);
-    if (restart.error) throw restart.error;
+  }
+
+  const coverageRun = await service()
+    .from("report_runs")
+    .select("id,status,expected_books,expected_checks,completed_checks")
+    .eq("id", reportRunDetails.id)
+    .eq("user_id", userId)
+    .single();
+  if (coverageRun.error) throw coverageRun.error;
+  if (
+    coverageRun.data.status !== "completed" ||
+    coverageRun.data.completed_checks !== coverageRun.data.expected_checks
+  ) {
+    return { skipped: "coverage incomplete", created: 0 };
   }
   const snapshot = await service().rpc("snapshot_daily_prices", {
     target_user: userId,
   });
   if (snapshot.error) throw snapshot.error;
-  const reportRun = await service().rpc("start_report_run_for_user", {
-    target_user: userId,
-    target_kind: kind === "בוקר" ? "morning" : "evening",
-  });
-  if (reportRun.error) throw reportRun.error;
-  const reportRunDetails = await service()
-    .from("report_runs")
-    .select("id,expected_books,expected_checks,completed_checks")
-    .eq("id", reportRun.data)
-    .eq("user_id", userId)
-    .single();
-  if (reportRunDetails.error) throw reportRunDetails.error;
   const settings = await settingsFor(userId);
   const { data: offers, error } = await service()
     .from("price_offers")
@@ -257,7 +629,7 @@ async function processScheduledUser(
       notification_type: "בדיקה מחודשת",
       title: "נדרשת בדיקת מודעה",
       body: `${offer.listing_title || "הצעה"} אצל ${offer.source} לא נבדקה ביומיים האחרונים.`,
-      dedupe_key: `${offer.id}:recheck:${localDate}`,
+      dedupe_key: `${offer.id}:recheck:${reportRunDetails.local_date}`,
       metadata: { source: offer.source },
     });
     if (reminder) created.push(reminder);
@@ -276,21 +648,29 @@ async function processScheduledUser(
       Number(settings.immediate_deal_threshold || 70),
   ).length;
   const reportLabel = kind === "בוקר" ? "דוח בוקר" : "דוח ערב";
+  const { emailHtml, reportedOffers, bundledNotificationIds } =
+    await buildReportEmail(userId, reportRunDetails);
   const report = await insertNotification({
     user_id: userId,
     notification_type: reportLabel,
     title: `${reportLabel} של המדף החסר`,
-    body: `נפתחה ריצת כיסוי מלאה עבור ${reportRunDetails.data.expected_books} ספרים ו ${reportRunDetails.data.expected_checks} בדיקות מקור. ${offers?.length || 0} הצעות פעילות. ${worthwhile} עסקאות מעל הסף.`,
-    dedupe_key: `${kind === "בוקר" ? "morning" : "evening"}:${localDate}`,
+    body: reportedOffers.length
+      ? `נמצאו ${reportedOffers.length} הצעות חדשות או זולות יותר.`
+      : "לא נמצאה הצעה חדשה או זולה יותר.",
+    dedupe_key: `complete_report:${reportRunDetails.report_kind}:${reportRunDetails.local_date}`,
     metadata: {
-      report_run_id: reportRunDetails.data.id,
-      expected_books: reportRunDetails.data.expected_books,
-      expected_checks: reportRunDetails.data.expected_checks,
-      completed_checks: reportRunDetails.data.completed_checks,
+      report_run_id: reportRunDetails.id,
+      expected_books: reportRunDetails.expected_books,
+      expected_checks: reportRunDetails.expected_checks,
+      completed_checks: reportRunDetails.completed_checks,
+      coverage_percent: 100,
       active_offers: offers?.length || 0,
       worthwhile,
       due: due.length,
+      reported_offers: reportedOffers,
+      bundled_notification_ids: bundledNotificationIds,
       email_delivery: "gmail_queue",
+      email_html: emailHtml,
     },
   });
   if (report) created.push(report);
@@ -301,7 +681,7 @@ async function processScheduledUser(
       result: {
         created: created.length,
         due: due.length,
-        report_run_id: reportRunDetails.data.id,
+        report_run_id: reportRunDetails.id,
         email_delivery: "gmail_queue",
       },
     })
@@ -311,7 +691,7 @@ async function processScheduledUser(
   return {
     skipped: false,
     created: created.length,
-    reportRunId: reportRunDetails.data.id,
+    reportRunId: reportRunDetails.id,
     emailDelivery: "gmail_queue",
   };
 }
@@ -338,21 +718,34 @@ async function processSchedule(request: Request) {
   for (const userId of users) {
     try {
       const settings = await settingsFor(userId);
-      const kinds = scheduledKinds(settings, local.hour) as ("בוקר" | "ערב")[];
-      if (!kinds.length) {
-        results.push({ userId, skipped: "outside configured user hours" });
-        continue;
+      const prepared = await ensureReportRun(
+        userId,
+        local.date,
+        local.hour,
+        settings,
+      );
+      const scanned = await scanOldestRun(userId);
+      const recentCutoff = new Date(`${local.date}T12:00:00Z`);
+      recentCutoff.setUTCDate(recentCutoff.getUTCDate() - 2);
+      const completedRuns = await service()
+        .from("report_runs")
+        .select("*")
+        .eq("user_id", userId)
+        .eq("status", "completed")
+        .in("report_kind", ["morning", "evening"])
+        .gte("local_date", recentCutoff.toISOString().slice(0, 10))
+        .order("local_date", { ascending: true })
+        .limit(6);
+      if (completedRuns.error) throw completedRuns.error;
+      const finalized = [];
+      for (const completedRun of completedRuns.data || []) {
+        if (!runIsDue(completedRun, local.date, local.hour, settings)) continue;
+        finalized.push(await finalizeScheduledRun(userId, completedRun));
       }
-      for (const kind of kinds) {
-        results.push({
-          userId,
-          kind,
-          ...(await processScheduledUser(userId, local.date, kind)),
-        });
-      }
+      results.push({ userId, prepared, scanned, finalized });
     } catch (error) {
       console.error("Scheduled user processing failed", error);
-      results.push({ error: "processing failed" });
+      results.push({ userId, error: "processing failed" });
     }
   }
   return json({ ok: true, local, users: users.length, results });
