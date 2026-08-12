@@ -135,6 +135,90 @@ function pricesNearTitle(body, title) {
   ].slice(0, 3);
 }
 
+function decodeHtml(value) {
+  return String(value || "")
+    .replace(/&#x([0-9a-f]+);/gi, (_, code) =>
+      String.fromCodePoint(Number.parseInt(code, 16)),
+    )
+    .replace(/&#(\d+);/g, (_, code) =>
+      String.fromCodePoint(Number.parseInt(code, 10)),
+    )
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'");
+}
+
+function textContent(value) {
+  return decodeHtml(String(value || "").replace(/<[^>]+>/g, " "))
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function priceFromProductCard(card) {
+  const sale = card.match(
+    /<ins\b[^>]*>[\s\S]*?<span\b[^>]*woocommerce-Price-amount[^>]*>[\s\S]*?<bdi\b[^>]*>([\s\S]*?)<\/bdi>/i,
+  );
+  const candidates = sale
+    ? [sale[1]]
+    : [
+        ...card.matchAll(
+          /<span\b[^>]*woocommerce-Price-amount[^>]*>[\s\S]*?<bdi\b[^>]*>([\s\S]*?)<\/bdi>/gi,
+        ),
+      ].map((match) => match[1]);
+  for (const candidate of candidates.reverse()) {
+    const amount = textContent(candidate).match(/(\d{1,4}(?:[.,]\d{1,2})?)/);
+    const price = amount ? Number(amount[1].replace(",", ".")) : NaN;
+    if (Number.isFinite(price) && price > 0 && price < 5000) return price;
+  }
+  return null;
+}
+
+export function extractSourceOffers({ sourceId, title, body }) {
+  if (!["rebooks", "sipur_hozer"].includes(sourceId)) return [];
+  const html = String(body || "");
+  const markers = [
+    ...html.matchAll(
+      /<div\b[^>]*class=["'][^"']*product-grid-item[^"']*["'][^>]*data-id=["'](\d+)["'][^>]*>/gi,
+    ),
+  ];
+  const wantedTitle = normalizeSearchText(title);
+  const offers = new Map();
+  for (let index = 0; index < markers.length; index += 1) {
+    const marker = markers[index];
+    const start = marker.index || 0;
+    const end =
+      markers[index + 1]?.index || Math.min(html.length, start + 12000);
+    const card = html.slice(start, end);
+    if (/\boutofstock\b/i.test(marker[0]) || /אזל\s+מהמלאי/i.test(card))
+      continue;
+    const titleLink = card.match(
+      /<h3\b[^>]*wd-entities-title[^>]*>[\s\S]*?<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/i,
+    );
+    if (!titleLink) continue;
+    const listingTitle = textContent(titleLink[2]);
+    if (!wantedTitle || normalizeSearchText(listingTitle) !== wantedTitle)
+      continue;
+    const itemPrice = priceFromProductCard(card);
+    if (itemPrice === null) continue;
+    const sourceUrl = decodeHtml(titleLink[1]);
+    const listingKey = marker[1] || sourceUrl;
+    offers.set(listingKey, {
+      source: "סיפור חוזר",
+      sourceListingKey: listingKey,
+      listingTitle,
+      sourceUrl,
+      itemPrice,
+      condition: "יד שנייה",
+      matchType: "מדויקת",
+      editionLanguage: "עברית",
+      shippingKnown: false,
+      shippingPrice: null,
+    });
+  }
+  return [...offers.values()];
+}
+
 export function classifySearchResponse({
   sourceId,
   title,
@@ -197,6 +281,15 @@ export function classifySearchResponse({
       status: "unavailable",
       resultCount: 0,
       note: "שם הספר חסר ולכן לא ניתן לבצע התאמה.",
+    };
+  }
+  const offers = extractSourceOffers({ sourceId, title, body: text });
+  if (offers.length) {
+    return {
+      status: "found",
+      resultCount: offers.length,
+      note: `נמצאו ${offers.length} הצעות זמינות עם מחיר מאומת.`,
+      offers,
     };
   }
   const occurrences = normalizedBody.split(normalizedTitle).length - 1;
