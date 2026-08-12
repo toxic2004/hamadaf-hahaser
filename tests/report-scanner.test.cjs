@@ -47,6 +47,54 @@ test("scanner identifies an exact normalized Hebrew title", async () => {
   assert.equal(result.resultCount, 1);
 });
 
+test("Rebooks parser returns only an exact in-stock product with its sale price", async () => {
+  const { classifySearchResponse } = await scanner();
+  const body = `
+    <div class="product-grid-item product post-11 outofstock" data-id="11">
+      <h3 class="wd-entities-title"><a href="https://rebooks.org.il/product/old">ספר לדוגמה</a></h3>
+      <span class="price"><ins><span class="woocommerce-Price-amount amount"><bdi>15 &#8362;</bdi></span></ins></span>
+    </div>
+    <div class="product-grid-item product post-12 instock" data-id="12">
+      <h3 class="wd-entities-title"><a href="https://rebooks.org.il/product/current">ספר לדוגמה</a></h3>
+      <span class="price"><del><span class="woocommerce-Price-amount amount"><bdi>25 &#8362;</bdi></span></del><ins><span class="woocommerce-Price-amount amount"><bdi>20 &#8362;</bdi></span></ins></span>
+    </div>`;
+  const result = classifySearchResponse({
+    sourceId: "rebooks",
+    title: "ספר לדוגמה",
+    status: 200,
+    contentType: "text/html",
+    body,
+  });
+  assert.equal(result.status, "found");
+  assert.equal(result.resultCount, 1);
+  assert.deepEqual(result.offers[0], {
+    source: "סיפור חוזר",
+    sourceListingKey: "12",
+    listingTitle: "ספר לדוגמה",
+    sourceUrl: "https://rebooks.org.il/product/current",
+    itemPrice: 20,
+    condition: "יד שנייה",
+    matchType: "מדויקת",
+    editionLanguage: "עברית",
+    shippingKnown: false,
+    shippingPrice: null,
+  });
+});
+
+test("Rebooks parser does not accept a similar title", async () => {
+  const { classifySearchResponse } = await scanner();
+  const body = `<div class="product-grid-item product instock" data-id="44"><h3 class="wd-entities-title"><a href="https://rebooks.org.il/product/other">ספר לדוגמה מורחב</a></h3><span class="woocommerce-Price-amount amount"><bdi>20 &#8362;</bdi></span></div>`;
+  const result = classifySearchResponse({
+    sourceId: "rebooks",
+    title: "ספר לדוגמה",
+    status: 200,
+    contentType: "text/html",
+    body,
+  });
+  assert.notEqual(result.status, "found");
+  assert.equal(result.resultCount, 0);
+});
+
 test("a reflected search heading alone is not reported as a product", async () => {
   const { classifySearchResponse } = await scanner();
   const result = classifySearchResponse({
