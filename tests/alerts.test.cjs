@@ -149,6 +149,20 @@ test("email content omits scanner and cover metrics", () => {
   assert.match(emailBuilder, /last_checked_at/);
 });
 
+test("email report change policy remains explicit and approval gated", () => {
+  const policy = fs.readFileSync(
+    path.join(root, "docs/email-report-change-policy.md"),
+    "utf8",
+  );
+  assert.match(
+    policy,
+    /אין לשנות רכיב כלשהו בדוח ההתראות במייל ללא אישור מפורש/,
+  );
+  assert.match(policy, /בקשת מיזוג 34/);
+  assert.match(policy, /גרסה 15/);
+  assert.match(policy, /נקודת החזרה של פונקציית ההתראות היא גרסה 14/);
+});
+
 test("deal notifications reject unsuitable offers", async () => {
   const { dealTotal } = await core();
   const suitable = {
