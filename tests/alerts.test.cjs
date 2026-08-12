@@ -111,11 +111,17 @@ test("report shows a book again only for a new or lower delivered price", async 
   ]);
 
   assert.deepEqual(
-    reportOfferChanges([{ book_id: "book-1", total_price: 50 }], deliveredReports),
+    reportOfferChanges(
+      [{ book_id: "book-1", total_price: 50 }],
+      deliveredReports,
+    ),
     [],
   );
   assert.deepEqual(
-    reportOfferChanges([{ book_id: "book-1", total_price: 55 }], deliveredReports),
+    reportOfferChanges(
+      [{ book_id: "book-1", total_price: 55 }],
+      deliveredReports,
+    ),
     [],
   );
 });
@@ -129,13 +135,18 @@ test("email content omits scanner and cover metrics", () => {
     source.indexOf("async function buildReportEmail"),
     source.indexOf("function runIsDue"),
   );
-  assert.doesNotMatch(emailBuilder, /coverage|completed_checks|expected_checks/);
+  assert.doesNotMatch(
+    emailBuilder,
+    /coverage|completed_checks|expected_checks/,
+  );
   assert.doesNotMatch(emailBuilder, /כריכות|בדיקות מקור|מצבי מקור|חסם גישה/);
   assert.match(emailBuilder, /מחיר קודם/);
   assert.match(emailBuilder, /חיסכון/);
   assert.match(emailBuilder, /source_url/);
   assert.match(emailBuilder, /bundledNotificationIds/);
   assert.match(emailBuilder, /כדאי לבדוק מחדש אם ההצעה עדיין זמינה/);
+  assert.match(emailBuilder, /הצעה פעילה שאומתה לאחרונה/);
+  assert.match(emailBuilder, /last_checked_at/);
 });
 
 test("deal notifications reject unsuitable offers", async () => {

@@ -388,13 +388,57 @@ async function scanOldestRun(userId: string) {
       return await scanCheck(check, book);
     },
   );
+  let storedOffers = 0;
+  for (let index = 0; index < results.length; index += 1) {
+    const result = results[index] as Record<string, any>;
+    const check = due[index];
+    for (const offer of result.offers || []) {
+      const existing = await service()
+        .from("price_offers")
+        .select("id")
+        .eq("user_id", userId)
+        .eq("source", offer.source)
+        .eq("source_listing_key", offer.sourceListingKey)
+        .maybeSingle();
+      if (existing.error) throw existing.error;
+      const now = new Date();
+      const payload = {
+        user_id: userId,
+        book_id: check.book_id,
+        source: offer.source,
+        source_listing_key: offer.sourceListingKey,
+        listing_title: offer.listingTitle,
+        source_url: offer.sourceUrl,
+        condition: offer.condition,
+        match_type: offer.matchType,
+        edition_language: offer.editionLanguage,
+        item_price: offer.itemPrice,
+        shipping_price: offer.shippingPrice,
+        shipping_known: offer.shippingKnown,
+        active: true,
+        is_removed: false,
+        last_checked_at: now.toISOString(),
+        next_check_at: new Date(now.getTime() + 2 * 86400000).toISOString(),
+        updated_at: now.toISOString(),
+      };
+      const saved = existing.data?.id
+        ? await service()
+            .from("price_offers")
+            .update(payload)
+            .eq("id", existing.data.id)
+            .eq("user_id", userId)
+        : await service().from("price_offers").insert(payload);
+      if (saved.error) throw saved.error;
+      storedOffers += 1;
+    }
+  }
   const applied = await service().rpc("apply_report_check_results", {
     target_run: run.id,
     target_user: userId,
     result_rows: results,
   });
   if (applied.error) throw applied.error;
-  return { runId: run.id, processed: results.length };
+  return { runId: run.id, processed: results.length, storedOffers };
 }
 
 function escapeHtml(value: unknown) {
@@ -424,14 +468,13 @@ async function buildReportEmail(
     service()
       .from("price_offers")
       .select(
-        "book_id,source,listing_title,total_price,source_url,shipping_known,shipping_price,condition,location",
+        "book_id,source,listing_title,item_price,total_price,source_url,shipping_known,shipping_price,condition,location,last_checked_at",
       )
       .eq("user_id", userId)
       .eq("active", true)
       .eq("is_removed", false)
       .eq("edition_language", "עברית")
-      .not("total_price", "is", null)
-      .order("total_price", { ascending: true }),
+      .order("last_checked_at", { ascending: false, nullsFirst: false }),
     service()
       .from("notifications")
       .select("metadata,emailed_at")
@@ -465,13 +508,46 @@ async function buildReportEmail(
     offers.filter((offer) => bookById.has(offer.book_id)),
     deliveredReportsResult.data || [],
   );
+  const recentCutoff = Date.now() - 48 * 60 * 60 * 1000;
+  const recentBestByBook = new Map<string, Record<string, any>>();
+  for (const offer of offers) {
+    const checkedAt = new Date(offer.last_checked_at || 0).getTime();
+    const displayPrice = Number(offer.total_price ?? offer.item_price);
+    if (
+      !bookById.has(offer.book_id) ||
+      !offer.source_url ||
+      !Number.isFinite(displayPrice) ||
+      checkedAt < recentCutoff
+    )
+      continue;
+    const current = recentBestByBook.get(offer.book_id);
+    const currentPrice = Number(current?.total_price ?? current?.item_price);
+    if (!current || displayPrice < currentPrice)
+      recentBestByBook.set(offer.book_id, offer);
+  }
+  const changedUrls = new Set(relevantOffers.map((offer) => offer.source_url));
+  const activeOffers = [...recentBestByBook.values()]
+    .filter((offer) => !changedUrls.has(offer.source_url))
+    .sort(
+      (left, right) =>
+        Number(left.total_price ?? left.item_price) -
+        Number(right.total_price ?? right.item_price),
+    );
+  const displayOffers = [
+    ...relevantOffers,
+    ...activeOffers.map((offer) => ({ ...offer, change_type: "active" })),
+  ].slice(0, 15);
   const pendingAlerts = pendingAlertsResult.data || [];
-  const cards = relevantOffers
+  const cards = displayOffers
     .map((offer: Record<string, any>) => {
       const book = bookById.get(offer.book_id) || {};
-      const price = Number(offer.total_price).toFixed(2);
+      const price = Number(offer.total_price ?? offer.item_price).toFixed(2);
       const isLower = offer.change_type === "lower";
-      const badge = isLower ? "מחיר חדש ונמוך יותר" : "הצעה חדשה";
+      const badge = isLower
+        ? "מחיר חדש ונמוך יותר"
+        : offer.change_type === "active"
+          ? "הצעה פעילה שאומתה לאחרונה"
+          : "הצעה חדשה";
       const comparison = isLower
         ? `<div class="saving"><span>מחיר קודם: ${Number(offer.previous_price).toFixed(2)} ₪</span><strong>חיסכון: ${Number(offer.savings).toFixed(2)} ₪</strong></div>`
         : "";
@@ -517,8 +593,8 @@ async function buildReportEmail(
     })
     .join("");
   const emptyState = `<section class="empty"><h2>לא נמצאה הצעה חדשה או זולה יותר</h2><p>נמשיך לעקוב ונעדכן כאשר תופיע הצעה שכדאי לבדוק.</p></section>`;
-  const title = relevantOffers.length
-    ? `מצאנו ${relevantOffers.length} הצעות שכדאי לבדוק`
+  const title = displayOffers.length
+    ? `מצאנו ${displayOffers.length} הצעות שכדאי לבדוק`
     : pendingAlerts.length
       ? "יש עדכונים שכדאי לבדוק"
       : "אין שינוי במחירים כרגע";
