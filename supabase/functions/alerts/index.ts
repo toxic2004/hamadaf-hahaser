@@ -413,6 +413,7 @@ async function scanOldestRun(userId: string) {
         match_type: offer.matchType,
         edition_language: offer.editionLanguage,
         item_price: offer.itemPrice,
+        availability_status: offer.availabilityStatus,
         shipping_price: offer.shippingPrice,
         shipping_known: offer.shippingKnown,
         active: true,
@@ -468,12 +469,15 @@ async function buildReportEmail(
     service()
       .from("price_offers")
       .select(
-        "book_id,source,listing_title,item_price,total_price,source_url,shipping_known,shipping_price,condition,location,last_checked_at",
+        "book_id,source,listing_title,item_price,total_price,source_url,availability_status,last_checked_at",
       )
       .eq("user_id", userId)
       .eq("active", true)
       .eq("is_removed", false)
       .eq("edition_language", "עברית")
+      .not("item_price", "is", null)
+      .not("source_url", "is", null)
+      .in("availability_status", ["במלאי", "לא במלאי"])
       .order("last_checked_at", { ascending: false, nullsFirst: false }),
     service()
       .from("notifications")
@@ -541,72 +545,29 @@ async function buildReportEmail(
   const cards = displayOffers
     .map((offer: Record<string, any>) => {
       const book = bookById.get(offer.book_id) || {};
-      const price = Number(offer.total_price ?? offer.item_price).toFixed(2);
-      const isLower = offer.change_type === "lower";
-      const badge = isLower
-        ? "מחיר חדש ונמוך יותר"
-        : offer.change_type === "active"
-          ? "הצעה פעילה שאומתה לאחרונה"
-          : "הצעה חדשה";
-      const comparison = isLower
-        ? `<div class="saving"><span>מחיר קודם: ${Number(offer.previous_price).toFixed(2)} ₪</span><strong>חיסכון: ${Number(offer.savings).toFixed(2)} ₪</strong></div>`
-        : "";
-      const shipping = offer.shipping_known
-        ? Number(offer.shipping_price || 0) > 0
-          ? `כולל משלוח בסך ${Number(offer.shipping_price).toFixed(2)} ₪`
-          : "איסוף עצמי או משלוח ללא תוספת ידועה"
-        : "מחיר המשלוח עדיין אינו ידוע";
-      const details = [offer.condition, offer.location]
-        .filter(Boolean)
-        .map((value) => `<span>${escapeHtml(value)}</span>`)
-        .join("");
-      const action = offer.source_url
-        ? `<a class="button" href="${escapeHtml(offer.source_url)}">לצפייה בהצעה</a>`
-        : "";
-      return `<section><div class="badge">${badge}</div><h2>${escapeHtml(book.title || offer.listing_title || "ספר")}</h2><p class="author">${escapeHtml(book.author || "המחבר לא צוין")}</p><div class="price"><small>${offer.shipping_known ? "מחיר כולל" : "מחיר הספר"}</small><strong>${price} ₪</strong></div>${comparison}<div class="facts"><span>${escapeHtml(offer.source)}</span><span>${escapeHtml(shipping)}</span>${details}</div>${action}</section>`;
+      const price = Number(offer.item_price).toFixed(2);
+      return `<section><h2>${escapeHtml(book.title || offer.listing_title || "ספר")}</h2><p class="author">${escapeHtml(book.author || "המחבר לא צוין")}</p><div class="price"><small>מחיר</small><strong>${price} ₪</strong></div><div class="availability">${escapeHtml(offer.availability_status)}</div><a class="button" href="${escapeHtml(offer.source_url)}">למוצר</a></section>`;
     })
     .join("");
-  const groupedAlerts = new Map<string, Record<string, any>>();
-  for (const alert of pendingAlerts) {
-    const key = alert.book_id || alert.id;
-    const group = groupedAlerts.get(key) || {
-      book: bookById.get(alert.book_id) || {},
-      alerts: [],
-      sources: new Set<string>(),
-    };
-    group.alerts.push(alert);
-    if (alert.metadata?.source) group.sources.add(alert.metadata.source);
-    groupedAlerts.set(key, group);
-  }
-  const alertCards = [...groupedAlerts.values()]
-    .map((group) => {
-      const important = group.alerts.find(
-        (alert: Record<string, any>) =>
-          alert.notification_type === "עסקה משתלמת" ||
-          alert.notification_type === "ירידת מחיר",
-      );
-      const body = important?.body || "כדאי לבדוק מחדש אם ההצעה עדיין זמינה.";
-      const sources = [...group.sources]
-        .map((source) => `<span>${escapeHtml(source)}</span>`)
-        .join("");
-      return `<section class="alert"><div class="badge">התראה</div><h2>${escapeHtml(group.book.title || important?.title || "עדכון להצעה")}</h2><p class="alertText">${escapeHtml(body)}</p>${sources ? `<div class="facts">${sources}</div>` : ""}</section>`;
-    })
-    .join("");
+  const displayedBookIds = new Set(displayOffers.map((offer) => offer.book_id));
+  const bundledNotificationIds = pendingAlerts
+    .filter((alert) => displayedBookIds.has(alert.book_id))
+    .map((alert) => alert.id);
   const emptyState = `<section class="empty"><h2>לא נמצאה הצעה חדשה או זולה יותר</h2><p>נמשיך לעקוב ונעדכן כאשר תופיע הצעה שכדאי לבדוק.</p></section>`;
   const title = displayOffers.length
     ? `מצאנו ${displayOffers.length} הצעות שכדאי לבדוק`
-    : pendingAlerts.length
-      ? "יש עדכונים שכדאי לבדוק"
-      : "אין שינוי במחירים כרגע";
-  const emailHtml = `<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;background:#07111f;font-family:Arial,sans-serif;color:#eaf2ff}main{max-width:680px;margin:auto;padding:18px}header{background:linear-gradient(135deg,#122746,#0e756d);border:1px solid #2a5278;border-radius:22px;padding:28px;box-shadow:0 18px 50px #0005}header .brand{color:#71f5cf;font-size:14px;font-weight:700;letter-spacing:.5px}h1{font-size:30px;line-height:1.2;margin:8px 0 0}section{background:#0f1d30;border:1px solid #263b58;border-radius:20px;margin:16px 0;padding:22px;box-shadow:0 12px 34px #0004}h2{font-size:23px;margin:10px 0 3px}.author{color:#a9bad2;margin:0 0 18px}.alertText{color:#d7e3f3;line-height:1.6}.badge{display:inline-block;background:#123e42;color:#77f3d1;border:1px solid #23645f;border-radius:999px;padding:6px 11px;font-size:13px;font-weight:700}.price{background:#0a1525;border-radius:16px;padding:16px;margin:8px 0}.price small{display:block;color:#8ca1bc}.price strong{display:block;color:#fff;font-size:34px;margin-top:3px}.saving{display:flex;justify-content:space-between;gap:12px;background:#112d2c;color:#a6eedc;border-radius:12px;padding:11px 13px;margin:10px 0}.facts{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0}.facts span{background:#172942;color:#c6d4e8;border-radius:9px;padding:7px 10px;font-size:14px}.button{display:block;background:#61e7c1;color:#06231c;text-align:center;text-decoration:none;font-weight:800;border-radius:12px;padding:13px}.empty{text-align:center;padding:34px 22px}.empty p{color:#a9bad2;margin-bottom:0}@media(max-width:600px){main{padding:10px}header,section{border-radius:16px;padding:18px}h1{font-size:25px}.price strong{font-size:30px}.saving{display:block}.saving strong{display:block;margin-top:5px}}</style></head><body><main><header><div class="brand">המדף החסר</div><h1>${title}</h1></header>${cards || (alertCards ? "" : emptyState)}${alertCards}</main></body></html>`;
+    : "אין שינוי במחירים כרגע";
+  const emailHtml = `<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;background:#f4f7fb;font-family:Arial,sans-serif;color:#142033}main{max-width:680px;margin:auto;padding:18px}header{background:#123b5d;color:#fff;border-radius:18px;padding:24px}header .brand{color:#8ef0d0;font-size:14px;font-weight:700}h1{font-size:28px;line-height:1.2;margin:8px 0 0}section{background:#fff;border:1px solid #dce5ef;border-radius:16px;margin:14px 0;padding:20px}h2{font-size:22px;margin:0 0 3px}.author{color:#607086;margin:0 0 16px}.price{background:#f1f5f9;border-radius:12px;padding:14px;margin:8px 0}.price small{display:block;color:#607086}.price strong{display:block;font-size:32px;margin-top:3px}.availability{display:inline-block;background:#e7f7f1;color:#115c4a;border-radius:999px;padding:7px 11px;margin:8px 0 16px;font-weight:700}.button{display:block;background:#25c49a;color:#072a21;text-align:center;text-decoration:none;font-weight:800;border-radius:10px;padding:13px}.empty{text-align:center;padding:30px 20px}.empty p{color:#607086;margin-bottom:0}@media(max-width:600px){main{padding:10px}header,section{border-radius:14px;padding:17px}h1{font-size:24px}.price strong{font-size:29px}}</style></head><body><main><header><div class="brand">המדף החסר</div><h1>${title}</h1></header>${cards || emptyState}</main></body></html>`;
   return {
     emailHtml,
-    bundledNotificationIds: pendingAlerts.map((alert) => alert.id),
+    bundledNotificationIds,
     reportedOffers: relevantOffers.map((offer: Record<string, any>) => ({
       book_id: offer.book_id,
-      total_price: Number(offer.total_price),
+      total_price: Number(offer.total_price ?? offer.item_price),
+      item_price: Number(offer.item_price),
       source: offer.source,
       source_url: offer.source_url || null,
+      availability_status: offer.availability_status,
     })),
   };
 }
@@ -718,11 +679,6 @@ async function finalizeScheduledRun(
       .eq("user_id", userId);
     if (reschedule.error) throw reschedule.error;
   }
-  const worthwhile = (offers || []).filter(
-    (offer) =>
-      Number(offer.deal_score || 0) >=
-      Number(settings.immediate_deal_threshold || 70),
-  ).length;
   const reportLabel = kind === "בוקר" ? "דוח בוקר" : "דוח ערב";
   const { emailHtml, reportedOffers, bundledNotificationIds } =
     await buildReportEmail(userId, reportRunDetails);
@@ -736,13 +692,7 @@ async function finalizeScheduledRun(
     dedupe_key: `complete_report:${reportRunDetails.report_kind}:${reportRunDetails.local_date}`,
     metadata: {
       report_run_id: reportRunDetails.id,
-      expected_books: reportRunDetails.expected_books,
-      expected_checks: reportRunDetails.expected_checks,
-      completed_checks: reportRunDetails.completed_checks,
-      coverage_percent: 100,
-      active_offers: offers?.length || 0,
-      worthwhile,
-      due: due.length,
+      content_policy: "books_only_v1",
       reported_offers: reportedOffers,
       bundled_notification_ids: bundledNotificationIds,
       email_delivery: "gmail_queue",
