@@ -212,11 +212,24 @@ async function scanBook(context, book) {
       offers: offers.filter((offer) => offer.concrete),
     };
   } catch (error) {
+    let pageTitle = "";
+    let pageText = "";
+    try {
+      pageTitle = await page.title();
+      pageText = (await page.locator("body").innerText()).slice(0, 1200);
+      await page.screenshot({ path: "rebooks-error.png", fullPage: true });
+      await fs.writeFile("rebooks-error.html", await page.content());
+    } catch {
+      // Keep the original scanner error when diagnostics also fail.
+    }
     return {
       book,
       status: "שגיאה",
       offers: [],
       error: error instanceof Error ? error.message : String(error),
+      pageUrl: page.url(),
+      pageTitle,
+      pageText,
     };
   } finally {
     await page.close();
@@ -244,6 +257,9 @@ async function main() {
     );
     if (arguments_.output) await fs.writeFile(arguments_.output, `${output}\n`);
     else process.stdout.write(`${output}\n`);
+    if (results.some((result) => result.status === "שגיאה")) {
+      process.exitCode = 1;
+    }
   } finally {
     await browser.close();
   }
