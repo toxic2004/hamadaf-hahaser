@@ -1,9 +1,6 @@
 name: Test Sipur Hozer browser scanner
 
 on:
-  push:
-    branches:
-      - experiment/rebooks-browser-stage1
   workflow_dispatch:
     inputs:
       books_json:
