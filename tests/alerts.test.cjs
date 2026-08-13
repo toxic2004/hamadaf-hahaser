@@ -126,6 +126,27 @@ test("report shows a book again only for a new or lower delivered price", async 
   );
 });
 
+test("report accepts only a known delivered total up to 30 shekels", async () => {
+  const { MAX_REPORT_TOTAL, reportableOfferTotal } = await core();
+  assert.equal(MAX_REPORT_TOTAL, 30);
+  assert.equal(
+    reportableOfferTotal({ shipping_known: true, total_price: 30 }),
+    30,
+  );
+  assert.equal(
+    reportableOfferTotal({ shipping_known: true, total_price: 30.01 }),
+    null,
+  );
+  assert.equal(
+    reportableOfferTotal({ shipping_known: false, total_price: 20 }),
+    null,
+  );
+  assert.equal(
+    reportableOfferTotal({ shipping_known: true, total_price: null }),
+    null,
+  );
+});
+
 test("email content omits scanner and cover metrics", () => {
   const source = fs.readFileSync(
     path.join(root, "supabase/functions/alerts/index.ts"),
@@ -151,6 +172,10 @@ test("email content omits scanner and cover metrics", () => {
   assert.match(emailBuilder, /\["במלאי", "לא במלאי"\]/);
   assert.match(emailBuilder, /\.not\("item_price", "is", null\)/);
   assert.match(emailBuilder, /\.not\("source_url", "is", null\)/);
+  assert.match(emailBuilder, /\.eq\("shipping_known", true\)/);
+  assert.match(emailBuilder, /\.not\("total_price", "is", null\)/);
+  assert.match(emailBuilder, /\.lte\("total_price", MAX_REPORT_TOTAL\)/);
+  assert.match(emailBuilder, /מחיר כולל משלוח/);
   assert.match(emailBuilder, />למוצר<\/a>/);
 });
 
@@ -191,12 +216,16 @@ test("email report change policy remains explicit and approval gated", () => {
     /תוצאה מוצגת רק כאשר קיימים יחד מחיר מספרי, קישור ישיר למוצר ומצב מלאי מפורש/,
   );
   assert.match(policy, /"במלאי" או "לא במלאי"/);
+  assert.match(policy, /חוק מחיר כולל עד 30 ש״ח/);
+  assert.match(policy, /המחיר הכולל שלהם\s+הוא עד 30 ש״ח/);
+  assert.match(policy, /אין להניח שמחיר המשלוח\s+הוא אפס/);
 });
 
 test("deal notifications reject unsuitable offers", async () => {
   const { dealTotal } = await core();
   const suitable = {
-    total_price: 42,
+    total_price: 30,
+    shipping_known: true,
     edition_language: "עברית",
     availability_status: "במלאי",
     match_type: "התאמה מלאה",
@@ -204,7 +233,7 @@ test("deal notifications reject unsuitable offers", async () => {
     is_removed: false,
     deal_score: 80,
   };
-  assert.equal(dealTotal(suitable, 70), 42);
+  assert.equal(dealTotal(suitable, 70), 30);
   assert.equal(dealTotal({ ...suitable, deal_score: 69 }, 70), null);
   assert.equal(
     dealTotal({ ...suitable, edition_language: "אנגלית" }, 70),
@@ -214,6 +243,8 @@ test("deal notifications reject unsuitable offers", async () => {
   assert.equal(dealTotal({ ...suitable, active: false }, 70), null);
   assert.equal(dealTotal({ ...suitable, is_removed: true }, 70), null);
   assert.equal(dealTotal({ ...suitable, total_price: null }, 70), null);
+  assert.equal(dealTotal({ ...suitable, total_price: 30.01 }, 70), null);
+  assert.equal(dealTotal({ ...suitable, shipping_known: false }, 70), null);
   assert.equal(
     dealTotal({ ...suitable, availability_status: "לא במלאי" }, 70),
     null,
