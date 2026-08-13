@@ -1,3 +1,5 @@
+import { isDirectProductUrl } from "./core.mjs";
+
 const SOURCE_PLANS = Object.freeze({
   yad2: {
     mode: "manual",
@@ -205,6 +207,7 @@ export function extractSourceOffers({ sourceId, title, body }) {
     const itemPrice = priceFromProductCard(card);
     if (itemPrice === null) continue;
     const sourceUrl = decodeHtml(titleLink[1]);
+    if (!isDirectProductUrl(sourceUrl)) continue;
     const listingKey = marker[1] || sourceUrl;
     offers.set(listingKey, {
       source: "סיפור חוזר",
