@@ -140,13 +140,36 @@ test("email content omits scanner and cover metrics", () => {
     /coverage|completed_checks|expected_checks/,
   );
   assert.doesNotMatch(emailBuilder, /כריכות|בדיקות מקור|מצבי מקור|חסם גישה/);
-  assert.match(emailBuilder, /מחיר קודם/);
-  assert.match(emailBuilder, /חיסכון/);
+  assert.doesNotMatch(emailBuilder, /מחיר קודם/);
+  assert.doesNotMatch(emailBuilder, /חיסכון/);
   assert.match(emailBuilder, /source_url/);
   assert.match(emailBuilder, /bundledNotificationIds/);
-  assert.match(emailBuilder, /כדאי לבדוק מחדש אם ההצעה עדיין זמינה/);
-  assert.match(emailBuilder, /הצעה פעילה שאומתה לאחרונה/);
+  assert.doesNotMatch(emailBuilder, /כדאי לבדוק מחדש אם ההצעה עדיין זמינה/);
+  assert.doesNotMatch(emailBuilder, /הצעה פעילה שאומתה לאחרונה/);
   assert.match(emailBuilder, /last_checked_at/);
+  assert.match(emailBuilder, /availability_status/);
+  assert.match(emailBuilder, /\["במלאי", "לא במלאי"\]/);
+  assert.match(emailBuilder, /\.not\("item_price", "is", null\)/);
+  assert.match(emailBuilder, /\.not\("source_url", "is", null\)/);
+  assert.match(emailBuilder, />למוצר<\/a>/);
+});
+
+test("morning and evening email records expose books only", () => {
+  const source = fs.readFileSync(
+    path.join(root, "supabase/functions/alerts/index.ts"),
+    "utf8",
+  );
+  const reportRecord = source.slice(
+    source.indexOf("const report = await insertNotification"),
+    source.indexOf("if (report) created.push(report)"),
+  );
+  assert.match(reportRecord, /content_policy: "books_only_v1"/);
+  assert.match(reportRecord, /reported_offers: reportedOffers/);
+  assert.match(reportRecord, /email_html: emailHtml/);
+  assert.doesNotMatch(
+    reportRecord,
+    /expected_books|expected_checks|completed_checks|coverage_percent|active_offers|worthwhile|due:/,
+  );
 });
 
 test("email report change policy remains explicit and approval gated", () => {
@@ -161,6 +184,13 @@ test("email report change policy remains explicit and approval gated", () => {
   assert.match(policy, /בקשת מיזוג 34/);
   assert.match(policy, /גרסה 15/);
   assert.match(policy, /נקודת החזרה של פונקציית ההתראות היא גרסה 14/);
+  assert.match(policy, /דוחות הבוקר והערב מציגים מידע על ספרים והצעות בלבד/);
+  assert.match(policy, /המידע הטכני נשמר ברקע בלבד/);
+  assert.match(
+    policy,
+    /תוצאה מוצגת רק כאשר קיימים יחד מחיר מספרי, קישור ישיר למוצר ומצב מלאי מפורש/,
+  );
+  assert.match(policy, /"במלאי" או "לא במלאי"/);
 });
 
 test("deal notifications reject unsuitable offers", async () => {
@@ -168,6 +198,7 @@ test("deal notifications reject unsuitable offers", async () => {
   const suitable = {
     total_price: 42,
     edition_language: "עברית",
+    availability_status: "במלאי",
     match_type: "התאמה מלאה",
     active: true,
     is_removed: false,
@@ -183,6 +214,10 @@ test("deal notifications reject unsuitable offers", async () => {
   assert.equal(dealTotal({ ...suitable, active: false }, 70), null);
   assert.equal(dealTotal({ ...suitable, is_removed: true }, 70), null);
   assert.equal(dealTotal({ ...suitable, total_price: null }, 70), null);
+  assert.equal(
+    dealTotal({ ...suitable, availability_status: "לא במלאי" }, 70),
+    null,
+  );
 });
 
 test("dedupe keys are stable and change only with the relevant price", async () => {
