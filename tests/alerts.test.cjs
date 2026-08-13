@@ -176,7 +176,15 @@ test("email content omits scanner and cover metrics", () => {
   assert.match(emailBuilder, /\.not\("total_price", "is", null\)/);
   assert.match(emailBuilder, /\.lte\("total_price", MAX_REPORT_TOTAL\)/);
   assert.match(emailBuilder, /מחיר כולל משלוח/);
-  assert.match(emailBuilder, />למוצר<\/a>/);
+  assert.match(emailBuilder, />לצפייה במוצר<\/a>/);
+  assert.match(emailBuilder, /<table role="presentation"/);
+  assert.match(emailBuilder, /background:#102a43/);
+  assert.match(emailBuilder, /background:#2dd4bf/);
+  assert.match(emailBuilder, /background:#ffffff/);
+  assert.match(emailBuilder, /style="display:block;background:#0f766e/);
+  assert.doesNotMatch(emailBuilder, /<style[\s>]/i);
+  assert.doesNotMatch(emailBuilder, /class=/i);
+  assert.doesNotMatch(emailBuilder, /<script[\s>]/i);
 });
 
 test("morning and evening email records expose books only", () => {
@@ -219,6 +227,10 @@ test("email report change policy remains explicit and approval gated", () => {
   assert.match(policy, /חוק מחיר כולל עד 30 ש״ח/);
   assert.match(policy, /המחיר הכולל שלהם\s+הוא עד 30 ש״ח/);
   assert.match(policy, /אין להניח שמחיר המשלוח\s+הוא אפס/);
+  assert.match(policy, /חוק עיצוב ותאימות Gmail/);
+  assert.match(policy, /עיצוב בהיר, נקי והייטקי/);
+  assert.match(policy, /כל סגנונות התצוגה\s+יוטמעו ישירות ברכיבי ה HTML/);
+  assert.match(policy, /אין להסתמך על תגית style/);
 });
 
 test("deal notifications reject unsuitable offers", async () => {
