@@ -43,7 +43,11 @@ jobs:
       - name: Scan Sipur Hozer without database writes
         run: node scripts/rebooks-browser-scan.mjs --input books-input.json --output rebooks-results.json
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: rebooks-scan-results
-          path: rebooks-results.json
+          path: |
+            rebooks-results.json
+            rebooks-error.png
+            rebooks-error.html
           retention-days: 7
