@@ -4,8 +4,10 @@ import {
   dealTotal,
   isUuid,
   jerusalemParts,
+  MAX_REPORT_TOTAL,
   priceDrop,
   priceDropDedupeKey,
+  reportableOfferTotal,
   reportOfferChanges,
   requestMode,
 } from "./core.mjs";
@@ -478,6 +480,9 @@ async function buildReportEmail(
       .not("item_price", "is", null)
       .not("source_url", "is", null)
       .in("availability_status", ["במלאי", "לא במלאי"])
+      .eq("shipping_known", true)
+      .not("total_price", "is", null)
+      .lte("total_price", MAX_REPORT_TOTAL)
       .order("last_checked_at", { ascending: false, nullsFirst: false }),
     service()
       .from("notifications")
@@ -508,13 +513,17 @@ async function buildReportEmail(
   const bookById = new Map<string, Record<string, any>>(
     books.map((book) => [book.id, book]),
   );
+  const reportableOffers = offers.filter(
+    (offer) =>
+      bookById.has(offer.book_id) && reportableOfferTotal(offer) !== null,
+  );
   const relevantOffers = reportOfferChanges(
-    offers.filter((offer) => bookById.has(offer.book_id)),
+    reportableOffers,
     deliveredReportsResult.data || [],
   );
   const recentCutoff = Date.now() - 48 * 60 * 60 * 1000;
   const recentBestByBook = new Map<string, Record<string, any>>();
-  for (const offer of offers) {
+  for (const offer of reportableOffers) {
     const checkedAt = new Date(offer.last_checked_at || 0).getTime();
     const displayPrice = Number(offer.total_price ?? offer.item_price);
     if (
@@ -545,8 +554,8 @@ async function buildReportEmail(
   const cards = displayOffers
     .map((offer: Record<string, any>) => {
       const book = bookById.get(offer.book_id) || {};
-      const price = Number(offer.item_price).toFixed(2);
-      return `<section><h2>${escapeHtml(book.title || offer.listing_title || "ספר")}</h2><p class="author">${escapeHtml(book.author || "המחבר לא צוין")}</p><div class="price"><small>מחיר</small><strong>${price} ₪</strong></div><div class="availability">${escapeHtml(offer.availability_status)}</div><a class="button" href="${escapeHtml(offer.source_url)}">למוצר</a></section>`;
+      const price = Number(offer.total_price).toFixed(2);
+      return `<section><h2>${escapeHtml(book.title || offer.listing_title || "ספר")}</h2><p class="author">${escapeHtml(book.author || "המחבר לא צוין")}</p><div class="price"><small>מחיר כולל משלוח</small><strong>${price} ₪</strong></div><div class="availability">${escapeHtml(offer.availability_status)}</div><a class="button" href="${escapeHtml(offer.source_url)}">למוצר</a></section>`;
     })
     .join("");
   const displayedBookIds = new Set(displayOffers.map((offer) => offer.book_id));

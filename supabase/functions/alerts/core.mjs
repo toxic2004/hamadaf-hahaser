@@ -31,6 +31,16 @@ export function priceDrop(previousValue, currentValue) {
   return { previous, current };
 }
 
+export const MAX_REPORT_TOTAL = 30;
+
+export function reportableOfferTotal(offer) {
+  if (offer?.shipping_known !== true || offer?.total_price === null) return null;
+  const total = Number(offer?.total_price);
+  if (!Number.isFinite(total) || total < 0 || total > MAX_REPORT_TOTAL)
+    return null;
+  return total;
+}
+
 export function reportOfferChanges(offers, deliveredReports = []) {
   const previousBestByBook = new Map();
   for (const report of deliveredReports || []) {
@@ -85,7 +95,7 @@ export function reportOfferChanges(offers, deliveredReports = []) {
 }
 
 export function dealTotal(offer, threshold) {
-  const total = offer.total_price === null ? null : Number(offer.total_price);
+  const total = reportableOfferTotal(offer);
   if (
     offer.edition_language !== "עברית" ||
     offer.availability_status !== "במלאי" ||
@@ -93,7 +103,6 @@ export function dealTotal(offer, threshold) {
     !offer.active ||
     offer.is_removed ||
     total === null ||
-    !Number.isFinite(total) ||
     Number(offer.deal_score || 0) < threshold
   )
     return null;
