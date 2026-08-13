@@ -78,6 +78,20 @@ test("Rebooks parser returns only an exact in-stock product with its sale price"
   });
 });
 
+test("Rebooks parser rejects a search page link inside a product-shaped card", async () => {
+  const { classifySearchResponse } = await scanner();
+  const body = `<div class="product-grid-item product instock" data-id="13"><h3 class="wd-entities-title"><a href="https://rebooks.org.il/?s=ספר+לדוגמה&post_type=product">ספר לדוגמה</a></h3><span class="woocommerce-Price-amount amount"><bdi>20 &#8362;</bdi></span></div>`;
+  const result = classifySearchResponse({
+    sourceId: "rebooks",
+    title: "ספר לדוגמה",
+    status: 200,
+    contentType: "text/html",
+    body,
+  });
+  assert.notEqual(result.status, "found");
+  assert.equal(result.resultCount, 0);
+});
+
 test("Rebooks parser reports an exact out-of-stock product with price and link", async () => {
   const { classifySearchResponse } = await scanner();
   const body = `<div class="product-grid-item product outofstock" data-id="51"><h3 class="wd-entities-title"><a href="https://rebooks.org.il/product/missing">ספר חסר</a></h3><span class="woocommerce-Price-amount amount"><bdi>24 &#8362;</bdi></span></div>`;

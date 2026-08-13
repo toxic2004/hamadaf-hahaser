@@ -2,6 +2,7 @@ import { createClient } from "npm:@supabase/supabase-js@2.110.9";
 import {
   dealDedupeKey,
   dealTotal,
+  isCompleteReportOffer,
   isUuid,
   jerusalemParts,
   MAX_REPORT_TOTAL,
@@ -9,6 +10,7 @@ import {
   priceDropDedupeKey,
   reportableOfferTotal,
   reportOfferChanges,
+  reportQualityGate,
   requestMode,
 } from "./core.mjs";
 import {
@@ -471,7 +473,7 @@ async function buildReportEmail(
     service()
       .from("price_offers")
       .select(
-        "book_id,source,listing_title,item_price,total_price,source_url,availability_status,last_checked_at",
+        "book_id,source,listing_title,item_price,total_price,shipping_known,source_url,availability_status,last_checked_at",
       )
       .eq("user_id", userId)
       .eq("active", true)
@@ -515,7 +517,9 @@ async function buildReportEmail(
   );
   const reportableOffers = offers.filter(
     (offer) =>
-      bookById.has(offer.book_id) && reportableOfferTotal(offer) !== null,
+      Boolean(String(bookById.get(offer.book_id)?.title || "").trim()) &&
+      isCompleteReportOffer(offer) &&
+      reportableOfferTotal(offer) !== null,
   );
   const relevantOffers = reportOfferChanges(
     reportableOffers,
@@ -559,28 +563,34 @@ async function buildReportEmail(
         offer.availability_status === "במלאי"
           ? "background:#dcfce7;color:#166534;border:1px solid #bbf7d0;"
           : "background:#f1f5f9;color:#475569;border:1px solid #dbe3ed;";
-      return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:separate;background:#ffffff;border:1px solid #d8e4ee;border-radius:18px;margin:0 0 14px 0;box-shadow:0 8px 24px rgba(15,35,58,0.08);"><tr><td style="height:5px;background:#22c7a9;border-radius:18px 18px 0 0;font-size:0;line-height:0;">&nbsp;</td></tr><tr><td style="padding:22px 22px 20px 22px;text-align:right;direction:rtl;"><div style="font-family:Arial,sans-serif;font-size:21px;line-height:1.35;font-weight:800;color:#102a43;margin:0 0 4px 0;">${escapeHtml(book.title || offer.listing_title || "ספר")}</div><div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5;color:#62758a;margin:0 0 16px 0;">${escapeHtml(book.author || "המחבר לא צוין")}</div><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:separate;background:#f0fdfa;border:1px solid #ccfbf1;border-radius:13px;margin:0 0 14px 0;"><tr><td style="padding:14px 16px;text-align:right;direction:rtl;"><div style="font-family:Arial,sans-serif;font-size:12px;line-height:1.4;font-weight:700;color:#0f766e;margin:0 0 2px 0;">מחיר כולל משלוח</div><div style="font-family:Arial,sans-serif;font-size:31px;line-height:1.15;font-weight:900;color:#0f172a;letter-spacing:-0.5px;">${price} ₪</div></td></tr></table><div style="display:inline-block;${availabilityStyle}border-radius:999px;padding:7px 12px;font-family:Arial,sans-serif;font-size:13px;line-height:1;font-weight:800;margin:0 0 16px 0;">${escapeHtml(offer.availability_status)}</div><a href="${escapeHtml(offer.source_url)}" style="display:block;background:#0f766e;color:#ffffff;text-decoration:none;text-align:center;border-radius:11px;padding:13px 18px;font-family:Arial,sans-serif;font-size:15px;line-height:1.3;font-weight:800;">לצפייה במוצר</a></td></tr></table>`;
+      const changeLabel =
+        offer.change_type === "lower"
+          ? "ירידת מחיר"
+          : offer.change_type === "new"
+            ? "הצעה חדשה"
+            : "ללא שינוי במחיר";
+      return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:separate;background:#ffffff;border:1px solid #d8e4ee;border-radius:18px;margin:0 0 14px 0;box-shadow:0 8px 24px rgba(15,35,58,0.08);"><tr><td style="height:5px;background:#22c7a9;border-radius:18px 18px 0 0;font-size:0;line-height:0;">&nbsp;</td></tr><tr><td style="padding:22px 22px 20px 22px;text-align:right;direction:rtl;"><div style="font-family:Arial,sans-serif;font-size:21px;line-height:1.35;font-weight:800;color:#102a43;margin:0 0 4px 0;">${escapeHtml(book.title)}</div><div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5;color:#62758a;margin:0 0 5px 0;">${escapeHtml(book.author || "המחבר לא צוין")}</div><div style="font-family:Arial,sans-serif;font-size:13px;line-height:1.5;color:#0f766e;font-weight:700;margin:0 0 16px 0;">${escapeHtml(offer.source)} | ${changeLabel}</div><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:separate;background:#f0fdfa;border:1px solid #ccfbf1;border-radius:13px;margin:0 0 14px 0;"><tr><td style="padding:14px 16px;text-align:right;direction:rtl;"><div style="font-family:Arial,sans-serif;font-size:12px;line-height:1.4;font-weight:700;color:#0f766e;margin:0 0 2px 0;">מחיר כולל משלוח</div><div style="font-family:Arial,sans-serif;font-size:31px;line-height:1.15;font-weight:900;color:#0f172a;letter-spacing:-0.5px;">${price} ₪</div></td></tr></table><div style="display:inline-block;${availabilityStyle}border-radius:999px;padding:7px 12px;font-family:Arial,sans-serif;font-size:13px;line-height:1;font-weight:800;margin:0 0 16px 0;">${escapeHtml(offer.availability_status)}</div><a href="${escapeHtml(offer.source_url)}" style="display:block;background:#0f766e;color:#ffffff;text-decoration:none;text-align:center;border-radius:11px;padding:13px 18px;font-family:Arial,sans-serif;font-size:15px;line-height:1.3;font-weight:800;">לצפייה במוצר</a></td></tr></table>`;
     })
     .join("");
   const displayedBookIds = new Set(displayOffers.map((offer) => offer.book_id));
   const bundledNotificationIds = pendingAlerts
     .filter((alert) => displayedBookIds.has(alert.book_id))
     .map((alert) => alert.id);
-  const emptyState = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:separate;background:#ffffff;border:1px solid #d8e4ee;border-radius:18px;"><tr><td style="padding:34px 24px;text-align:center;direction:rtl;"><div style="font-family:Arial,sans-serif;font-size:20px;line-height:1.4;font-weight:800;color:#102a43;margin:0 0 8px 0;">לא נמצאה הצעה מתאימה</div><div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.6;color:#62758a;">נמשיך לעקוב ולעדכן כאשר תימצא הצעה עד 30 ש״ח כולל משלוח.</div></td></tr></table>`;
-  const title = displayOffers.length
-    ? `מצאנו ${displayOffers.length} הצעות שכדאי לבדוק`
-    : "אין שינוי במחירים כרגע";
-  const emailHtml = `<!doctype html><html lang="he" dir="rtl" style="margin:0;padding:0;background:#edf3f8;"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;padding:0;background:#edf3f8;color:#102a43;font-family:Arial,sans-serif;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#edf3f8" style="width:100%;border-collapse:collapse;background:#edf3f8;"><tr><td align="center" style="padding:20px 10px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:680px;border-collapse:separate;"><tr><td bgcolor="#102a43" style="background:#102a43;border-radius:20px;padding:0;text-align:right;direction:rtl;overflow:hidden;"><div style="height:6px;background:#2dd4bf;font-size:0;line-height:0;">&nbsp;</div><div style="padding:25px 25px 27px 25px;"><div style="display:inline-block;background:#163b5c;border:1px solid #285978;border-radius:999px;padding:6px 11px;font-family:Arial,sans-serif;font-size:12px;line-height:1;color:#78f2d2;font-weight:800;letter-spacing:0.3px;margin:0 0 12px 0;">המדף החסר</div><div style="font-family:Arial,sans-serif;font-size:28px;line-height:1.25;font-weight:900;color:#ffffff;margin:0 0 7px 0;">${title}</div><div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.6;color:#b9ccdc;">ספרים שמצאנו במחיר כולל של עד 30 ש״ח</div></div></td></tr><tr><td style="height:16px;font-size:0;line-height:0;">&nbsp;</td></tr><tr><td style="padding:0;text-align:right;direction:rtl;">${cards || emptyState}</td></tr><tr><td style="padding:10px 8px 2px 8px;text-align:center;direction:rtl;font-family:Arial,sans-serif;font-size:12px;line-height:1.6;color:#7b8da0;">המחיר, המלאי והקישור אומתו בעת הסריקה.</td></tr></table></td></tr></table></body></html>`;
+  const emailHtml = displayOffers.length
+    ? `<!doctype html><html lang="he" dir="rtl" style="margin:0;padding:0;background:#edf3f8;"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;padding:0;background:#edf3f8;color:#102a43;font-family:Arial,sans-serif;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#edf3f8" style="width:100%;border-collapse:collapse;background:#edf3f8;"><tr><td align="center" style="padding:20px 10px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:680px;border-collapse:separate;"><tr><td bgcolor="#102a43" style="background:#102a43;border-radius:20px;padding:0;text-align:right;direction:rtl;overflow:hidden;"><div style="height:6px;background:#2dd4bf;font-size:0;line-height:0;">&nbsp;</div><div style="padding:25px 25px 27px 25px;"><div style="display:inline-block;background:#163b5c;border:1px solid #285978;border-radius:999px;padding:6px 11px;font-family:Arial,sans-serif;font-size:12px;line-height:1;color:#78f2d2;font-weight:800;letter-spacing:0.3px;margin:0 0 12px 0;">המדף החסר</div><div style="font-family:Arial,sans-serif;font-size:28px;line-height:1.25;font-weight:900;color:#ffffff;margin:0 0 7px 0;">ספרים שמצאנו עבורך</div><div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.6;color:#b9ccdc;">הצעות מאומתות במחיר כולל של עד 30 ש״ח</div></div></td></tr><tr><td style="height:16px;font-size:0;line-height:0;">&nbsp;</td></tr><tr><td style="padding:0;text-align:right;direction:rtl;">${cards}</td></tr></table></td></tr></table></body></html>`
+    : null;
   return {
     emailHtml,
     bundledNotificationIds,
-    reportedOffers: relevantOffers.map((offer: Record<string, any>) => ({
+    reportedOffers: displayOffers.map((offer: Record<string, any>) => ({
       book_id: offer.book_id,
-      total_price: Number(offer.total_price ?? offer.item_price),
       item_price: Number(offer.item_price),
+      total_price: Number(offer.total_price ?? offer.item_price),
       source: offer.source,
       source_url: offer.source_url || null,
       availability_status: offer.availability_status,
+      shipping_known: true,
+      change_type: offer.change_type,
     })),
   };
 }
@@ -695,13 +705,28 @@ async function finalizeScheduledRun(
   const reportLabel = kind === "בוקר" ? "דוח בוקר" : "דוח ערב";
   const { emailHtml, reportedOffers, bundledNotificationIds } =
     await buildReportEmail(userId, reportRunDetails);
+  if (!emailHtml || !reportQualityGate(coverageRun.data, reportedOffers)) {
+    const completedWithoutReport = await service()
+      .from("price_scan_runs")
+      .update({
+        completed_at: new Date().toISOString(),
+        result: {
+          created: created.length,
+          report_run_id: reportRunDetails.id,
+          report_skipped: "quality_gate",
+          email_delivery: "gmail_queue",
+        },
+      })
+      .eq("id", runId)
+      .eq("user_id", userId);
+    if (completedWithoutReport.error) throw completedWithoutReport.error;
+    return { skipped: "report quality gate", created: created.length };
+  }
   const report = await insertNotification({
     user_id: userId,
     notification_type: reportLabel,
     title: `${reportLabel} של המדף החסר`,
-    body: reportedOffers.length
-      ? `נמצאו ${reportedOffers.length} הצעות חדשות או זולות יותר.`
-      : "לא נמצאה הצעה חדשה או זולה יותר.",
+    body: "נמצאו הצעות ספרים מאומתות המתאימות לכללי הדוח.",
     dedupe_key: `complete_report:${reportRunDetails.report_kind}:${reportRunDetails.local_date}`,
     metadata: {
       report_run_id: reportRunDetails.id,

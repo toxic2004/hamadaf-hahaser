@@ -33,12 +33,64 @@ export function priceDrop(previousValue, currentValue) {
 
 export const MAX_REPORT_TOTAL = 30;
 
+export function isDirectProductUrl(value) {
+  if (typeof value !== "string" || !value.trim()) return false;
+  try {
+    const url = new URL(value);
+    if (!["http:", "https:"].includes(url.protocol)) return false;
+    const path = decodeURIComponent(url.pathname).toLocaleLowerCase("en-US");
+    const searchPath =
+      path === "/search" ||
+      path.startsWith("/search/") ||
+      path.includes("catalogsearch") ||
+      path.includes("searchbooks.php") ||
+      path.includes("חיפוש");
+    if (searchPath) return false;
+    if (url.hostname.includes("google.") && path.startsWith("/search"))
+      return false;
+    const searchKeys = ["s", "search", "query", "q", "keyword"];
+    const hasSearchQuery = searchKeys.some((key) => url.searchParams.has(key));
+    const directPath =
+      /\/(?:product|products|item|items|listing|listings|book|books)\//.test(
+        path,
+      ) || path.includes("bookdetails");
+    return !hasSearchQuery || directPath;
+  } catch {
+    return false;
+  }
+}
+
 export function reportableOfferTotal(offer) {
   if (offer?.shipping_known !== true || offer?.total_price === null) return null;
   const total = Number(offer?.total_price);
   if (!Number.isFinite(total) || total < 0 || total > MAX_REPORT_TOTAL)
     return null;
   return total;
+}
+
+export function isCompleteReportOffer(offer) {
+  const itemPrice = Number(offer?.item_price);
+  return (
+    Boolean(offer?.book_id) &&
+    Boolean(String(offer?.source || "").trim()) &&
+    Number.isFinite(itemPrice) &&
+    itemPrice > 0 &&
+    reportableOfferTotal(offer) !== null &&
+    ["במלאי", "לא במלאי"].includes(offer?.availability_status) &&
+    isDirectProductUrl(offer?.source_url)
+  );
+}
+
+export function reportQualityGate(run, offers) {
+  return (
+    run?.status === "completed" &&
+    Number(run?.expected_books) > 0 &&
+    Number(run?.expected_checks) > 0 &&
+    Number(run?.completed_checks) === Number(run?.expected_checks) &&
+    Array.isArray(offers) &&
+    offers.length > 0 &&
+    offers.every(isCompleteReportOffer)
+  );
 }
 
 export function reportOfferChanges(offers, deliveredReports = []) {

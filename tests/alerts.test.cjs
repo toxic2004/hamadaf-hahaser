@@ -147,6 +147,52 @@ test("report accepts only a known delivered total up to 30 shekels", async () =>
   );
 });
 
+test("report quality rejects search pages, partial scans, and empty reports", async () => {
+  const { isCompleteReportOffer, isDirectProductUrl, reportQualityGate } =
+    await core();
+  const completeRun = {
+    status: "completed",
+    expected_books: 1,
+    expected_checks: 8,
+    completed_checks: 8,
+  };
+  const offer = {
+    book_id: "book-1",
+    source: "סיפור חוזר",
+    item_price: 20,
+    total_price: 30,
+    shipping_known: true,
+    availability_status: "במלאי",
+    source_url: "https://rebooks.org.il/product/example-book/",
+  };
+
+  assert.equal(isDirectProductUrl(offer.source_url), true);
+  assert.equal(
+    isDirectProductUrl("https://rebooks.org.il/?s=example&post_type=product"),
+    false,
+  );
+  assert.equal(
+    isDirectProductUrl("https://www.google.com/search?q=example+book"),
+    false,
+  );
+  assert.equal(isCompleteReportOffer(offer), true);
+  assert.equal(reportQualityGate(completeRun, [offer]), true);
+  assert.equal(reportQualityGate(completeRun, []), false);
+  assert.equal(
+    reportQualityGate({ ...completeRun, completed_checks: 7 }, [offer]),
+    false,
+  );
+  assert.equal(
+    reportQualityGate(completeRun, [
+      {
+        ...offer,
+        source_url: "https://rebooks.org.il/?s=example&post_type=product",
+      },
+    ]),
+    false,
+  );
+});
+
 test("email content omits scanner and cover metrics", () => {
   const source = fs.readFileSync(
     path.join(root, "supabase/functions/alerts/index.ts"),
@@ -173,9 +219,17 @@ test("email content omits scanner and cover metrics", () => {
   assert.match(emailBuilder, /\.not\("item_price", "is", null\)/);
   assert.match(emailBuilder, /\.not\("source_url", "is", null\)/);
   assert.match(emailBuilder, /\.eq\("shipping_known", true\)/);
+  assert.match(
+    emailBuilder,
+    /item_price,total_price,shipping_known,source_url/,
+  );
   assert.match(emailBuilder, /\.not\("total_price", "is", null\)/);
   assert.match(emailBuilder, /\.lte\("total_price", MAX_REPORT_TOTAL\)/);
   assert.match(emailBuilder, /מחיר כולל משלוח/);
+  assert.match(emailBuilder, /ירידת מחיר/);
+  assert.match(emailBuilder, /הצעה חדשה/);
+  assert.match(emailBuilder, /ללא שינוי במחיר/);
+  assert.match(emailBuilder, /escapeHtml\(offer\.source\)/);
   assert.match(emailBuilder, />לצפייה במוצר<\/a>/);
   assert.match(emailBuilder, /<table role="presentation"/);
   assert.match(emailBuilder, /background:#102a43/);
@@ -185,6 +239,26 @@ test("email content omits scanner and cover metrics", () => {
   assert.doesNotMatch(emailBuilder, /<style[\s>]/i);
   assert.doesNotMatch(emailBuilder, /class=/i);
   assert.doesNotMatch(emailBuilder, /<script[\s>]/i);
+  assert.doesNotMatch(emailBuilder, /מצאנו \$\{displayOffers\.length\}/);
+  assert.doesNotMatch(emailBuilder, /לא נמצאה הצעה מתאימה/);
+});
+
+test("empty or incomplete reports never enter the Gmail queue", () => {
+  const source = fs.readFileSync(
+    path.join(root, "supabase/functions/alerts/index.ts"),
+    "utf8",
+  );
+  const finalizer = source.slice(
+    source.indexOf("async function finalizeScheduledRun"),
+    source.indexOf("async function processSchedule"),
+  );
+  const qualityGate = finalizer.indexOf("reportQualityGate");
+  const reportInsert = finalizer.indexOf("const report = await insertNotification");
+  assert.ok(qualityGate > 0);
+  assert.ok(reportInsert > qualityGate);
+  assert.match(finalizer, /if \(!emailHtml \|\| !reportQualityGate/);
+  assert.match(finalizer, /report_skipped: "quality_gate"/);
+  assert.doesNotMatch(finalizer, /נמצאו \$\{reportedOffers\.length\}/);
 });
 
 test("morning and evening email records expose books only", () => {
@@ -231,6 +305,11 @@ test("email report change policy remains explicit and approval gated", () => {
   assert.match(policy, /עיצוב בהיר, נקי והייטקי/);
   assert.match(policy, /כל סגנונות התצוגה\s+יוטמעו ישירות ברכיבי ה HTML/);
   assert.match(policy, /אין להסתמך על תגית style/);
+  assert.match(policy, /חוק איכות ושליחה/);
+  assert.match(policy, /דוח חלקי אינו\s+נשלח/);
+  assert.match(policy, /דף חיפוש, דף קטלוג או כתובת\s+חיפוש כללית אינם הצעה/);
+  assert.match(policy, /דוח ללא הצעה מלאה ואמינה אינו נשלח/);
+  assert.match(policy, /אין\s+להציג ספירת בדיקות, מקורות, ניסיונות, תוצאות, הצעות/);
 });
 
 test("deal notifications reject unsuitable offers", async () => {
