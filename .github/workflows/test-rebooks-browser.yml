@@ -1,0 +1,49 @@
+name: Test Sipur Hozer browser scanner
+
+on:
+  push:
+    branches:
+      - experiment/rebooks-browser-stage1
+  workflow_dispatch:
+    inputs:
+      books_json:
+        description: JSON array with title and optional author
+        required: true
+        default: '[{"title":"להעיר את הענק שבפנים","author":"אנתוני רובינס"}]'
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-rebooks-browser
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm install --no-save --package-lock=false playwright@1.62.1
+      - run: npx playwright install --with-deps chromium
+      - name: Prepare isolated input
+        env:
+          BOOKS_JSON: ${{ inputs.books_json }}
+        run: |
+          if [ -z "$BOOKS_JSON" ]; then
+            BOOKS_JSON='[{"title":"להעיר את הענק שבפנים","author":"אנתוני רובינס"}]'
+          fi
+          node -e 'JSON.parse(process.env.BOOKS_JSON); require("fs").writeFileSync("books-input.json", process.env.BOOKS_JSON)'
+      - name: Scan Sipur Hozer without database writes
+        run: node scripts/rebooks-browser-scan.mjs --input books-input.json --output rebooks-results.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rebooks-scan-results
+          path: rebooks-results.json
+          retention-days: 7
