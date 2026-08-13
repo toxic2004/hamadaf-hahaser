@@ -190,8 +190,11 @@ export function extractSourceOffers({ sourceId, title, body }) {
     const end =
       markers[index + 1]?.index || Math.min(html.length, start + 12000);
     const card = html.slice(start, end);
-    if (/\boutofstock\b/i.test(marker[0]) || /אזל\s+מהמלאי/i.test(card))
-      continue;
+    const isOutOfStock =
+      /\boutofstock\b/i.test(marker[0]) || /אזל\s+מהמלאי/i.test(card);
+    const isInStock =
+      /\binstock\b/i.test(marker[0]) || /במלאי/i.test(card);
+    if (!isOutOfStock && !isInStock) continue;
     const titleLink = card.match(
       /<h3\b[^>]*wd-entities-title[^>]*>[\s\S]*?<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/i,
     );
@@ -209,6 +212,7 @@ export function extractSourceOffers({ sourceId, title, body }) {
       listingTitle,
       sourceUrl,
       itemPrice,
+      availabilityStatus: isOutOfStock ? "לא במלאי" : "במלאי",
       condition: "יד שנייה",
       matchType: "מדויקת",
       editionLanguage: "עברית",
@@ -300,20 +304,11 @@ export function classifySearchResponse({
       note: "שם הספר לא נמצא בתוצאות שהמקור החזיר.",
     };
   }
-  if (occurrences === 1) {
-    return {
-      status: "manual_required",
-      resultCount: 0,
-      note: "שם הספר הופיע רק בכותרת החיפוש. לא נמצאה הוכחה מספקת לרשומת מוצר.",
-    };
-  }
-  const prices = pricesNearTitle(text, title);
   return {
-    status: "found",
-    resultCount: 1,
-    note: prices.length
-      ? `נמצאה התאמה לשם הספר. מחירים שזוהו בעמוד: ${prices.join(", ")} ₪.`
-      : "נמצאה התאמה לשם הספר. המחיר לא זוהה באופן אמין.",
+    status: "manual_required",
+    resultCount: 0,
+    note:
+      "שם הספר הופיע, אך לא אומתו יחד מחיר, קישור ישיר למוצר ומצב מלאי.",
   };
 }
 
