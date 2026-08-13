@@ -1,0 +1,60 @@
+name: Test Sipur Hozer through Apify
+
+on:
+  push:
+    branches:
+      - experiment/rebooks-browser-stage1
+    paths:
+      - "apify-rebooks/**"
+      - "scripts/validate-apify-result.mjs"
+      - ".github/workflows/test-rebooks-apify.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-rebooks-apify
+  cancel-in-progress: false
+
+jobs:
+  one-book-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check Apify secret
+        env:
+          APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
+        run: test -n "$APIFY_TOKEN"
+      - name: Install Apify CLI
+        run: npm install --global apify-cli@1.8.0
+      - name: Authenticate without printing the token
+        env:
+          APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
+        run: apify login --token "$APIFY_TOKEN"
+      - name: Deploy isolated test Actor
+        run: apify push --dir apify-rebooks --wait-for-finish 300
+      - name: Run one book only
+        working-directory: apify-rebooks
+        run: apify call --input-file input.json --memory 1024 --timeout 180 --silent --json > ../apify-run.json
+      - name: Download result and current run cost
+        run: |
+          RUN_ID=$(node -p 'JSON.parse(require("fs").readFileSync("apify-run.json", "utf8")).id')
+          DATASET_ID=$(node -p 'JSON.parse(require("fs").readFileSync("apify-run.json", "utf8")).defaultDatasetId')
+          apify runs info "$RUN_ID" --json > apify-run-final.json
+          apify datasets get-items "$DATASET_ID" --format json > apify-result.json
+      - name: Require a concrete valid offer
+        run: node scripts/validate-apify-result.mjs apify-run-final.json apify-result.json apify-summary.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rebooks-apify-one-book-test
+          path: |
+            apify-run-final.json
+            apify-result.json
+            apify-summary.json
+          retention-days: 7
