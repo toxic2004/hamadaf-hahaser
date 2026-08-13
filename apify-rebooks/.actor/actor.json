@@ -1,0 +1,9 @@
+{
+  "$schema": "https://apify.com/schemas/v1/actor.ide.json",
+  "actorSpecification": 1,
+  "name": "hamadaf-hahaser-rebooks-test",
+  "title": "Hamadaf Hahaser Rebooks isolated test",
+  "version": "0.0",
+  "buildTag": "latest",
+  "dockerfile": "../Dockerfile"
+}
