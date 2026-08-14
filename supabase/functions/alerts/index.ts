@@ -464,6 +464,15 @@ function escapeHtml(value: unknown) {
     .replaceAll("'", "&#39;");
 }
 
+function buildEmptyReportEmail(reportLabel: string) {
+  // Priority-2 fix (2026-08-14, approved): previously, when a run finished
+  // scanning but found zero valid offers, the function skipped silently -
+  // no email at all, not even the short notice the user explicitly asked
+  // for. This restores that exact required message, in the same visual
+  // design as the full report.
+  return `<!doctype html><html lang="he" dir="rtl" style="margin:0;padding:0;background:#edf3f8;"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;padding:0;background:#edf3f8;color:#102a43;font-family:Arial,sans-serif;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#edf3f8" style="width:100%;border-collapse:collapse;background:#edf3f8;"><tr><td align="center" style="padding:20px 10px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:680px;border-collapse:separate;"><tr><td bgcolor="#102a43" style="background:#102a43;border-radius:20px;padding:0;text-align:right;direction:rtl;overflow:hidden;"><div style="height:6px;background:#2dd4bf;font-size:0;line-height:0;">&nbsp;</div><div style="padding:25px 25px 27px 25px;"><div style="display:inline-block;background:#163b5c;border:1px solid #285978;border-radius:999px;padding:6px 11px;font-family:Arial,sans-serif;font-size:12px;line-height:1;color:#78f2d2;font-weight:800;letter-spacing:0.3px;margin:0 0 12px 0;">המדף החסר</div><div style="font-family:Arial,sans-serif;font-size:24px;line-height:1.3;font-weight:900;color:#ffffff;margin:0 0 7px 0;">${escapeHtml(reportLabel)}</div></div></td></tr><tr><td style="height:16px;font-size:0;line-height:0;">&nbsp;</td></tr><tr><td style="padding:0;text-align:right;direction:rtl;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:separate;background:#ffffff;border:1px solid #d8e4ee;border-radius:18px;margin:0;box-shadow:0 8px 24px rgba(15,35,58,0.08);"><tr><td style="padding:26px 22px;text-align:right;direction:rtl;"><div style="font-family:Arial,sans-serif;font-size:17px;line-height:1.6;font-weight:700;color:#102a43;">לא נמצאה כעת הצעה מאומתת חדשה.</div></td></tr></table></td></tr></table></td></tr></table></body></html>`;
+}
+
 async function buildReportEmail(
   userId: string,
   reportRun: Record<string, any>,
@@ -714,6 +723,44 @@ async function finalizeScheduledRun(
   const reportLabel = kind === "בוקר" ? "דוח בוקר" : "דוח ערב";
   const { emailHtml, reportedOffers, bundledNotificationIds } =
     await buildReportEmail(userId, reportRunDetails);
+  // Priority-2 fix (2026-08-14, approved): coverageRun.data.status is
+  // already verified "completed" at this point (see the early gate
+  // above), so a null emailHtml here means scanning genuinely finished
+  // with zero valid offers - not that scanning is still in progress.
+  // That case now gets the short required notice instead of silence.
+  if (!emailHtml && reportedOffers.length === 0) {
+    const noOfferReport = await insertNotification({
+      user_id: userId,
+      notification_type: reportLabel,
+      title: `${reportLabel} של המדף החסר`,
+      body: "לא נמצאה כעת הצעה מאומתת חדשה.",
+      dedupe_key: `complete_report:${reportRunDetails.report_kind}:${reportRunDetails.local_date}`,
+      metadata: {
+        report_run_id: reportRunDetails.id,
+        content_policy: "books_only_v1",
+        reported_offers: [],
+        bundled_notification_ids: bundledNotificationIds,
+        email_delivery: "gmail_queue",
+        email_html: buildEmptyReportEmail(reportLabel),
+      },
+    });
+    if (noOfferReport) created.push(noOfferReport);
+    const completedEmptyReport = await service()
+      .from("price_scan_runs")
+      .update({
+        completed_at: new Date().toISOString(),
+        result: {
+          created: created.length,
+          report_run_id: reportRunDetails.id,
+          report_empty: true,
+          email_delivery: "gmail_queue",
+        },
+      })
+      .eq("id", runId)
+      .eq("user_id", userId);
+    if (completedEmptyReport.error) throw completedEmptyReport.error;
+    return { skipped: false, created: created.length };
+  }
   if (!emailHtml || !reportQualityGate(coverageRun.data, reportedOffers)) {
     const completedWithoutReport = await service()
       .from("price_scan_runs")
