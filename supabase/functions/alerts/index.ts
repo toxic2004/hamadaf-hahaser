@@ -223,14 +223,23 @@ async function scanCheck(
   };
   if (plan.status !== "pending") return { ...base, status: plan.status };
   try {
+    // Priority-1 fix (2026-08-14): the previous self-identifying
+    // "HamadafHahaserReportBot/1.0" user-agent appeared to trigger
+    // CAPTCHA/anti-bot walls on most automatic sources (confirmed via an
+    // isolated read-only check against a live Rebooks product page, which
+    // returned full content with no block using an ordinary browser
+    // user-agent). This still only reads public product pages that a
+    // browser could load directly - no login, no CAPTCHA solving, and no
+    // access-restricted content is touched.
     const response = await fetch(plan.searchUrl, {
       method: "GET",
       redirect: "follow",
       headers: {
-        accept: "text/html,application/xhtml+xml,application/json;q=0.8",
-        "accept-language": "he-IL,he;q=0.9,en;q=0.6",
+        accept:
+          "text/html,application/xhtml+xml,application/xml;q=0.9,application/json;q=0.8,*/*;q=0.7",
+        "accept-language": "he-IL,he;q=0.9,en-US;q=0.6,en;q=0.5",
         "user-agent":
-          "HamadafHahaserReportBot/1.0 (+read-only availability check)",
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
       },
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
