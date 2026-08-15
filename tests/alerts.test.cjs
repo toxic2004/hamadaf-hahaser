@@ -521,3 +521,25 @@ test("manual alerts test rejects bad authorization before invoking the schedule"
   assert.doesNotMatch(source, /console\.log\([^\n]*process\.env/i);
   assert.doesNotMatch(source, /console\.log\([^\n]*\$\{secret\}/i);
 });
+
+test("reportSubject matches the exact required format for both report kinds", async () => {
+  const { reportSubject } = await core();
+  assert.equal(
+    reportSubject("morning", "2026-08-15"),
+    "המדף החסר: דוח בוקר 15.08.2026",
+  );
+  assert.equal(
+    reportSubject("evening", "2026-01-03"),
+    "המדף החסר: דוח ערב 03.01.2026",
+  );
+});
+
+test("reportSubject never produces the older, non-conforming title format", async () => {
+  const { reportSubject } = await core();
+  const subject = reportSubject("evening", "2026-08-13");
+  // Regression guard for the exact bug found in a real sent email during
+  // the 2026-08-14 audit: "דוח ערב של המדף החסר" instead of the required
+  // "המדף החסר: דוח ערב DD.MM.YYYY".
+  assert.doesNotMatch(subject, /^דוח (בוקר|ערב) של המדף החסר/);
+  assert.match(subject, /^המדף החסר: דוח (בוקר|ערב) \d{2}\.\d{2}\.\d{4}$/);
+});

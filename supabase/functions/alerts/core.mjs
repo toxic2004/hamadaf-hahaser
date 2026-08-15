@@ -193,3 +193,18 @@ export function isUuid(value) {
 export function requestMode(value) {
   return value === "offer" || value === "schedule" ? value : null;
 }
+
+// Gmail-delivery fix (2026-08-15, pending approval): the exact required
+// subject format is "המדף החסר: דוח בוקר DD.MM.YYYY" / "...: דוח ערב
+// DD.MM.YYYY". A previous fix (2026-08-14) used a different title
+// ("דוח בוקר של המדף החסר") which did not match this - the same mismatch
+// already found in real sent emails during the 2026-08-14 audit. This is
+// the single place that formats the subject, used both for the report
+// notification's title and (once SMTP delivery is wired in) the actual
+// email Subject header, so the two can never drift apart again.
+export function reportSubject(reportKind, localDate) {
+  const [year, month, day] = String(localDate).split("-");
+  const label = reportKind === "morning" ? "דוח בוקר" : "דוח ערב";
+  if (!year || !month || !day) return `המדף החסר: ${label}`;
+  return `המדף החסר: ${label} ${day}.${month}.${year}`;
+}
