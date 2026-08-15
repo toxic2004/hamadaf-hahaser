@@ -26,7 +26,21 @@ import { sendMailViaGmailSmtp } from "./smtp-client.mjs";
 
 const GMAIL_SENDER_ADDRESS =
   Deno.env.get("GMAIL_SENDER_ADDRESS") || "toxic2004@gmail.com";
-const GMAIL_APP_PASSWORD = Deno.env.get("GMAIL_APP_PASSWORD") || "";
+// Fix (2026-08-15): no tool was available in this environment to set an
+// Edge Function environment secret directly (the usual `supabase secrets
+// set` path). Reused the exact same pattern already in production for
+// alerts_schedule_secret: store in Supabase Vault, expose only through a
+// SECURITY DEFINER RPC restricted to service_role. Fetched once per cold
+// start and cached, not on every request.
+let cachedGmailAppPassword: string | null = null;
+async function gmailAppPassword(): Promise<string> {
+  if (cachedGmailAppPassword !== null) return cachedGmailAppPassword;
+  const { data, error } = await service().rpc("get_gmail_app_password");
+  if (error) throw error;
+  const resolved = (data as string | null) || "";
+  cachedGmailAppPassword = resolved;
+  return resolved;
+}
 const MAX_EMAIL_SEND_ATTEMPTS = 5;
 const MAX_EMAILS_PER_INVOCATION = 5;
 
@@ -910,7 +924,8 @@ async function deliverQueuedGmailNotifications(
   userId: string,
   settings: Record<string, any>,
 ) {
-  if (!GMAIL_APP_PASSWORD) {
+  const appPassword = await gmailAppPassword();
+  if (!appPassword) {
     return { delivered: 0, skipped: "GMAIL_APP_PASSWORD not configured" };
   }
   if (settings.email_enabled === false) {
@@ -937,7 +952,7 @@ async function deliverQueuedGmailNotifications(
     try {
       await sendMailViaGmailSmtp({
         user: GMAIL_SENDER_ADDRESS,
-        pass: GMAIL_APP_PASSWORD,
+        pass: appPassword,
         from: GMAIL_SENDER_ADDRESS,
         to: recipient,
         subject,
