@@ -11,6 +11,7 @@ import {
   reportableOfferTotal,
   reportOfferChanges,
   reportQualityGate,
+  reportSubject,
   requestMode,
 } from "./core.mjs";
 import {
@@ -18,6 +19,13 @@ import {
   nextPreparationTarget,
   sourcePlan,
 } from "./scanner-core.mjs";
+import { sendMailViaGmailSmtp } from "./smtp-client.mjs";
+
+const GMAIL_SENDER_ADDRESS =
+  Deno.env.get("GMAIL_SENDER_ADDRESS") || "toxic2004@gmail.com";
+const GMAIL_APP_PASSWORD = Deno.env.get("GMAIL_APP_PASSWORD") || "";
+const MAX_EMAIL_SEND_ATTEMPTS = 5;
+const MAX_EMAILS_PER_INVOCATION = 5;
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
@@ -729,10 +737,16 @@ async function finalizeScheduledRun(
   // with zero valid offers - not that scanning is still in progress.
   // That case now gets the short required notice instead of silence.
   if (!emailHtml && reportedOffers.length === 0) {
+    // Gmail-delivery fix (2026-08-15): title now uses reportSubject() so it
+    // always matches the exact required "המדף החסר: דוח בוקר/ערב
+    // DD.MM.YYYY" format - the previous title here ("דוח X של המדף החסר")
+    // was the same mismatch already confirmed in a real sent email during
+    // the 2026-08-14 audit.
+    const subject = reportSubject(reportRunDetails.report_kind, reportRunDetails.local_date);
     const noOfferReport = await insertNotification({
       user_id: userId,
       notification_type: reportLabel,
-      title: `${reportLabel} של המדף החסר`,
+      title: subject,
       body: "לא נמצאה כעת הצעה מאומתת חדשה.",
       dedupe_key: `complete_report:${reportRunDetails.report_kind}:${reportRunDetails.local_date}`,
       metadata: {
@@ -741,6 +755,7 @@ async function finalizeScheduledRun(
         reported_offers: [],
         bundled_notification_ids: bundledNotificationIds,
         email_delivery: "gmail_queue",
+        email_subject: subject,
         email_html: buildEmptyReportEmail(reportLabel),
       },
     });
@@ -778,10 +793,16 @@ async function finalizeScheduledRun(
     if (completedWithoutReport.error) throw completedWithoutReport.error;
     return { skipped: "report quality gate", created: created.length };
   }
+  // Gmail-delivery fix (2026-08-15): see the identical comment above -
+  // reportSubject() is now the single place that formats this string.
+  const fullReportSubject = reportSubject(
+    reportRunDetails.report_kind,
+    reportRunDetails.local_date,
+  );
   const report = await insertNotification({
     user_id: userId,
     notification_type: reportLabel,
-    title: `${reportLabel} של המדף החסר`,
+    title: fullReportSubject,
     body: "נמצאו הצעות ספרים מאומתות המתאימות לכללי הדוח.",
     dedupe_key: `complete_report:${reportRunDetails.report_kind}:${reportRunDetails.local_date}`,
     metadata: {
@@ -790,6 +811,7 @@ async function finalizeScheduledRun(
       reported_offers: reportedOffers,
       bundled_notification_ids: bundledNotificationIds,
       email_delivery: "gmail_queue",
+      email_subject: fullReportSubject,
       email_html: emailHtml,
     },
   });
@@ -814,6 +836,84 @@ async function finalizeScheduledRun(
     reportRunId: reportRunDetails.id,
     emailDelivery: "gmail_queue",
   };
+}
+
+// Gmail-delivery mechanism (2026-08-15, pending approval - not deployed
+// until GMAIL_APP_PASSWORD secret is configured). Everything upstream of
+// this already writes queued emails to `notifications` tagged
+// email_delivery: "gmail_queue" - nothing previously anywhere in this
+// codebase or CI actually drained that queue via Gmail. This closes that
+// gap using SMTP + an App Password (see smtp-client.mjs for why SMTP
+// rather than the Gmail API/OAuth: OAuth refresh tokens for the sensitive
+// gmail.send scope on a personal, unverified Google Cloud project expire
+// every 7 days, which is not viable for an unattended schedule).
+async function deliverQueuedGmailNotifications(
+  userId: string,
+  settings: Record<string, any>,
+) {
+  if (!GMAIL_APP_PASSWORD) {
+    return { delivered: 0, skipped: "GMAIL_APP_PASSWORD not configured" };
+  }
+  if (settings.email_enabled === false) {
+    return { delivered: 0, skipped: "email disabled in settings" };
+  }
+  const recipient = settings.email_address || GMAIL_SENDER_ADDRESS;
+  const pending = await service()
+    .from("notifications")
+    .select("id,title,body,metadata")
+    .eq("user_id", userId)
+    .is("emailed_at", null)
+    .contains("metadata", { email_delivery: "gmail_queue" })
+    .order("created_at", { ascending: true })
+    .limit(MAX_EMAILS_PER_INVOCATION);
+  if (pending.error) throw pending.error;
+  let delivered = 0;
+  for (const row of pending.data || []) {
+    const metadata = (row.metadata || {}) as Record<string, any>;
+    const attempts = Number(metadata.email_send_attempts || 0);
+    if (attempts >= MAX_EMAIL_SEND_ATTEMPTS) continue;
+    const subject = metadata.email_subject || row.title;
+    const html = metadata.email_html;
+    if (!html) continue;
+    try {
+      await sendMailViaGmailSmtp({
+        user: GMAIL_SENDER_ADDRESS,
+        pass: GMAIL_APP_PASSWORD,
+        from: GMAIL_SENDER_ADDRESS,
+        to: recipient,
+        subject,
+        html,
+        text: row.body || "",
+      });
+      // Only mark emailed_at after SMTP has confirmed acceptance above -
+      // if sendMailViaGmailSmtp throws, we never reach this update, so a
+      // failed send is never marked as sent.
+      const marked = await service()
+        .from("notifications")
+        .update({ emailed_at: new Date().toISOString() })
+        .eq("id", row.id)
+        .eq("user_id", userId)
+        .is("emailed_at", null);
+      if (marked.error) throw marked.error;
+      delivered += 1;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "send failed";
+      console.error("Gmail SMTP send failed", row.id, message);
+      const failed = await service()
+        .from("notifications")
+        .update({
+          metadata: {
+            ...metadata,
+            email_send_attempts: attempts + 1,
+            email_last_send_error: message,
+          },
+        })
+        .eq("id", row.id)
+        .eq("user_id", userId);
+      if (failed.error) throw failed.error;
+    }
+  }
+  return { delivered };
 }
 
 async function processSchedule(request: Request) {
@@ -862,7 +962,8 @@ async function processSchedule(request: Request) {
         if (!runIsDue(completedRun, local.date, local.hour, settings)) continue;
         finalized.push(await finalizeScheduledRun(userId, completedRun));
       }
-      results.push({ userId, prepared, scanned, finalized });
+      const delivered = await deliverQueuedGmailNotifications(userId, settings);
+      results.push({ userId, prepared, scanned, finalized, delivered });
     } catch (error) {
       console.error("Scheduled user processing failed", error);
       results.push({ userId, error: "processing failed" });
