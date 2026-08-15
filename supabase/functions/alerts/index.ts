@@ -15,7 +15,10 @@ import {
   requestMode,
 } from "./core.mjs";
 import {
+  bestKnownShipping,
   classifySearchResponse,
+  extractAvailableBranches,
+  extractShippingOptions,
   nextPreparationTarget,
   sourcePlan,
 } from "./scanner-core.mjs";
@@ -214,6 +217,56 @@ async function mapWithConcurrency<T, R>(
   return results;
 }
 
+// Real-shipping-cost fix (2026-08-15, approved): Rebooks/סיפור חוזר search
+// result pages never carry shipping cost, only the individual product page
+// does. This performs exactly one extra fetch, only for an offer that has
+// already been confirmed as an exact title match on the search page - not
+// for every search result, matching what was agreed. If the product page
+// fetch fails for any reason, the offer is returned unchanged (shipping
+// stays unknown, same safe behavior as before this fix existed).
+async function enrichRebooksShippingCosts(
+  sourceId: string,
+  offers: Array<Record<string, any>>,
+) {
+  if (!["rebooks", "sipur_hozer"].includes(sourceId) || !offers?.length) {
+    return offers;
+  }
+  const enriched: Array<Record<string, any>> = [];
+  for (const offer of offers) {
+    try {
+      const productResponse = await fetch(offer.sourceUrl, {
+        method: "GET",
+        redirect: "follow",
+        headers: {
+          accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.7",
+          "accept-language": "he-IL,he;q=0.9,en-US;q=0.6,en;q=0.5",
+          "user-agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+        },
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      });
+      if (productResponse.ok) {
+        const productBody = await productResponse.text();
+        const shippingOptions = extractShippingOptions(productBody);
+        const availableBranches = extractAvailableBranches(productBody);
+        const best = bestKnownShipping(shippingOptions, availableBranches);
+        if (best) {
+          enriched.push({
+            ...offer,
+            shippingKnown: true,
+            shippingPrice: best.price,
+          });
+          continue;
+        }
+      }
+    } catch {
+      // Product page unreachable - fall through and keep shipping unknown.
+    }
+    enriched.push(offer);
+  }
+  return enriched;
+}
+
 async function scanCheck(
   check: Record<string, any>,
   book: Record<string, any>,
@@ -259,6 +312,12 @@ async function scanCheck(
       contentType: response.headers.get("content-type") || "",
       body,
     });
+    if (classified.status === "found" && classified.offers?.length) {
+      classified.offers = await enrichRebooksShippingCosts(
+        check.source_id,
+        classified.offers,
+      );
+    }
     if (
       classified.status === "temporary_error" &&
       attemptCount < MAX_SCAN_ATTEMPTS
