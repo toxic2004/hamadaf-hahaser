@@ -380,16 +380,83 @@ export function extractShippingOptions(html) {
 // Picks the single shipping figure to use as the report's shipping_price:
 // distribution point is preferred because it is available nationwide
 // regardless of the user's location or which branch has the book, unlike
-// self-pickup (tied to a specific branch) - matches the current rule that
-// self-pickup can only count as free once a matching, verified branch in
-// an approved area is known, which this fix does not yet attempt. Courier
-// is used only if no distribution-point price was found.
-export function bestKnownShipping(options) {
+// self-pickup (tied to a specific branch). Courier is used only if no
+// distribution-point price was found. See bestKnownShipping() below for
+// the final version that also considers self-pickup once a carrying
+// branch is known to be approved.
+
+// Self-pickup branch matching (2026-08-15, approved). Self-pickup at
+// Rebooks is free but only from the specific branch the book is ordered
+// from - it only counts as a valid "cheapest option" if that branch is
+// somewhere convenient for the user. This list was confirmed explicitly
+// with the user against the full, real branch list fetched from
+// rebooks.org.il/סניפים/ on 2026-08-15 (24 branches total). Netanya:
+// included per explicit confirmation. Yavne: excluded per explicit
+// confirmation. Modi'in and Bnei Brak have no Rebooks branch at all, so
+// they never appear here regardless of being in the general approved-area
+// list for shipping.
+const APPROVED_PICKUP_CITIES = Object.freeze([
+  "פתח תקווה",
+  "תל אביב",
+  "רמת גן",
+  "גבעתיים",
+  "ראשון לציון",
+  "חולון",
+  "רחובות",
+  "רמלה",
+  "כפר סבא",
+  "ירושלים",
+  "נתניה",
+]);
+
+export function isApprovedPickupBranch(branchName) {
+  const normalized = normalizeSearchText(branchName);
+  if (!normalized) return false;
+  return APPROVED_PICKUP_CITIES.some((city) =>
+    normalized.includes(normalizeSearchText(city)),
+  );
+}
+
+// Parses which physical branches currently carry a specific book, from the
+// product page's "זמינות המוצר בסניפים" section (a different section from
+// the shipping-options block above).
+const AVAILABLE_BRANCHES_SECTION_LABEL = "זמינות המוצר בסניפים";
+
+export function extractAvailableBranches(html) {
+  const text = textContent(html);
+  const sectionIndex = text.indexOf(AVAILABLE_BRANCHES_SECTION_LABEL);
+  if (sectionIndex < 0) return [];
+  const window = text.slice(sectionIndex, sectionIndex + 4000);
+  const matches = [...window.matchAll(/סניף\s+([^\n\r(),.]{2,30})/g)];
+  const names = matches.map((match) => match[1].trim()).filter(Boolean);
+  return [...new Set(names)];
+}
+
+// Final shipping decision: compares every option that is actually valid
+// for this user (self-pickup only if a carrying branch is approved,
+// distribution point and courier always since both are nationwide) and
+// returns the genuinely cheapest one - implementing the user's ranking
+// rule directly (2026-08-15): "the cheapest, best, most convenient total
+// price for the consumer, not source-checking order."
+export function bestKnownShipping(options, availableBranches = []) {
+  const candidates = [];
+  if (
+    options?.pickup &&
+    availableBranches.some((branch) => isApprovedPickupBranch(branch))
+  ) {
+    candidates.push({ price: options.pickup.price, method: "pickup" });
+  }
   if (options?.distributionPoint) {
-    return { price: options.distributionPoint.price, method: "distributionPoint" };
+    candidates.push({
+      price: options.distributionPoint.price,
+      method: "distributionPoint",
+    });
   }
   if (options?.courier) {
-    return { price: options.courier.price, method: "courier" };
+    candidates.push({ price: options.courier.price, method: "courier" });
   }
-  return null;
+  if (!candidates.length) return null;
+  return candidates.reduce((best, candidate) =>
+    candidate.price < best.price ? candidate : best,
+  );
 }

@@ -64,3 +64,68 @@ test("this exact block matches the total_price=35 already observed for מי הז
   const itemPrice = 20;
   assert.equal(itemPrice + best.price, 35);
 });
+
+// Real branch-availability block, sampled from the actual product page
+// fetched during the 2026-08-15 audit.
+const REAL_BRANCH_AVAILABILITY_HTML = `
+  <h3>זמינות המוצר בסניפים</h3>
+  <p>שימו לב – כאן תוכלו לראות באיזה סניף נמצא הספר.</p>
+  <div class="branch-item"><a href="#">סניף חדרה</a>
+    <p><strong>שעות פעילות:</strong> ימים ראשון, שני, רביעי, חמישי 08:30-19:30</p>
+  </div>
+  <div class="branch-item"><a href="#">סניף חולון (מרכז הזמנות חולון- איסוף עצמי בלבד)</a>
+    <p><strong>שעות פעילות:</strong> ראשון-חמישי 08:30-13:30</p>
+  </div>
+`;
+
+test("extractAvailableBranches reads branch names from the real availability block", async () => {
+  const { extractAvailableBranches } = await scanner();
+  const branches = extractAvailableBranches(REAL_BRANCH_AVAILABILITY_HTML);
+  assert.ok(branches.some((name) => name.includes("חדרה")));
+  assert.ok(branches.some((name) => name.includes("חולון")));
+});
+
+test("extractAvailableBranches returns an empty list when the section is absent", async () => {
+  const { extractAvailableBranches } = await scanner();
+  assert.deepEqual(extractAvailableBranches("<div>שום מידע כאן</div>"), []);
+});
+
+test("isApprovedPickupBranch matches every city confirmed with the user, and rejects excluded/unrelated ones", async () => {
+  const { isApprovedPickupBranch } = await scanner();
+  const approved = [
+    "פתח תקווה",
+    "תל אביב",
+    "תל אביב - איכילוב",
+    "רמת גן",
+    "גבעתיים",
+    "ראשון לציון",
+    "חולון (מרכז הזמנות חולון- איסוף עצמי בלבד)",
+    "רחובות",
+    "רמלה",
+    "כפר סבא",
+    "ירושלים",
+    "ירושלים מאה שערים",
+    "נתניה",
+  ];
+  for (const city of approved) {
+    assert.ok(isApprovedPickupBranch(city), `expected "${city}" to be approved`);
+  }
+  const rejected = ["חדרה", "יבנה", "חיפה", "אשדוד", "באר שבע", "עכו", "נשר"];
+  for (const city of rejected) {
+    assert.ok(!isApprovedPickupBranch(city), `expected "${city}" to be rejected`);
+  }
+});
+
+test("bestKnownShipping picks free pickup over paid options when an approved branch carries the book", async () => {
+  const { extractShippingOptions, bestKnownShipping } = await scanner();
+  const options = extractShippingOptions(REAL_SHIPPING_BLOCK_HTML);
+  const best = bestKnownShipping(options, ["סניף פתח תקווה"]);
+  assert.deepEqual(best, { price: 0, method: "pickup" });
+});
+
+test("bestKnownShipping ignores pickup when only non-approved branches carry the book, falling back to distribution point", async () => {
+  const { extractShippingOptions, bestKnownShipping } = await scanner();
+  const options = extractShippingOptions(REAL_SHIPPING_BLOCK_HTML);
+  const best = bestKnownShipping(options, ["סניף חדרה", "סניף יבנה"]);
+  assert.deepEqual(best, { price: 15, method: "distributionPoint" });
+});

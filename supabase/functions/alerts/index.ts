@@ -16,6 +16,7 @@ import {
 import {
   bestKnownShipping,
   classifySearchResponse,
+  extractAvailableBranches,
   extractShippingOptions,
   nextPreparationTarget,
   sourcePlan,
@@ -239,7 +240,8 @@ async function enrichRebooksShippingCosts(
       if (productResponse.ok) {
         const productBody = await productResponse.text();
         const shippingOptions = extractShippingOptions(productBody);
-        const best = bestKnownShipping(shippingOptions);
+        const availableBranches = extractAvailableBranches(productBody);
+        const best = bestKnownShipping(shippingOptions, availableBranches);
         if (best) {
           enriched.push({
             ...offer,
