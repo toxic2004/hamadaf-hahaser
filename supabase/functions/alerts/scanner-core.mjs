@@ -332,3 +332,64 @@ export function nextPreparationTarget(localDate, localHour, settings) {
 export function isTerminalStatus(status) {
   return status !== "pending" && status !== "temporary_error";
 }
+
+// Real-shipping-cost fix (2026-08-15, approved). Rebooks/סיפור חוזר search
+// result pages never include shipping cost - only the individual product
+// page does, in a labeled "אפשרויות משלוח" block with three fixed options:
+// self-pickup (free, but only from the branch the order was placed from),
+// courier, and a nationwide "distribution point" delivery. Search-result
+// scanning alone can therefore never know a real total price for this
+// source, which is exactly why shipping_known was always false before this
+// fix - meaning no Rebooks offer could ever pass the report's
+// shipping_known filter. This parses that block from the product page's
+// own HTML (fetched separately, only for an already-confirmed exact
+// match - see index.ts).
+const SHIPPING_LABELS = Object.freeze({
+  pickup: "איסוף עצמי",
+  courier: "שליח עד הבית",
+  distributionPoint: "נקודת חלוקה",
+});
+
+function priceNearLabel(text, label) {
+  const index = text.indexOf(label);
+  if (index < 0) return null;
+  const window = text.slice(index, index + 200);
+  if (/חינם/.test(window)) return 0;
+  const match = window.match(/(\d{1,3}(?:[.,]\d{1,2})?)\s*(?:₪|ש["״']?ח)/);
+  return match ? Number(match[1].replace(",", ".")) : null;
+}
+
+export function extractShippingOptions(html) {
+  const text = textContent(html);
+  const pickupPrice = priceNearLabel(text, SHIPPING_LABELS.pickup);
+  const courierPrice = priceNearLabel(text, SHIPPING_LABELS.courier);
+  const distributionPointPrice = priceNearLabel(
+    text,
+    SHIPPING_LABELS.distributionPoint,
+  );
+  return {
+    pickup: pickupPrice === null ? null : { price: pickupPrice },
+    courier: courierPrice === null ? null : { price: courierPrice },
+    distributionPoint:
+      distributionPointPrice === null
+        ? null
+        : { price: distributionPointPrice },
+  };
+}
+
+// Picks the single shipping figure to use as the report's shipping_price:
+// distribution point is preferred because it is available nationwide
+// regardless of the user's location or which branch has the book, unlike
+// self-pickup (tied to a specific branch) - matches the current rule that
+// self-pickup can only count as free once a matching, verified branch in
+// an approved area is known, which this fix does not yet attempt. Courier
+// is used only if no distribution-point price was found.
+export function bestKnownShipping(options) {
+  if (options?.distributionPoint) {
+    return { price: options.distributionPoint.price, method: "distributionPoint" };
+  }
+  if (options?.courier) {
+    return { price: options.courier.price, method: "courier" };
+  }
+  return null;
+}
