@@ -49,7 +49,23 @@ const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") || "";
 const MAX_BODY_BYTES = 16_384;
 const SCAN_BATCH_SIZE = 80;
-const SCAN_CONCURRENCY = 10;
+// Politeness fix (2026-08-15, approved): every automatic source (Rebooks,
+// Simania, Steimatzky, Booknet, Sipur Hozer) returned HTTP 403 / an
+// explicit security-check page for 100% of requests in the first live run
+// after the User-Agent fix, even though an isolated single request to the
+// same Rebooks page succeeded cleanly. Firing 10 requests at once per
+// batch (the previous SCAN_CONCURRENCY) is a burst pattern real browsers
+// never produce, and is a plausible trigger for automatic blocking
+// distinct from the user-agent string itself. Lowering concurrency and
+// adding a small randomized delay between requests is a politeness
+// change, not a way to defeat CAPTCHA or bypass site protections - it
+// does not disguise the request's origin or identity in any way, and per
+// the user's explicit instruction this is the ONLY mitigation attempted;
+// if it does not help, the correct response is to accept the limitation,
+// not to escalate toward fingerprint spoofing or paid unblocking
+// services.
+const SCAN_CONCURRENCY = 2;
+const SCAN_REQUEST_DELAY_MS = 900;
 const FETCH_TIMEOUT_MS = 6_000;
 const MAX_SCAN_ATTEMPTS = 3;
 let serviceClient: ReturnType<typeof createClient> | null = null;
@@ -298,6 +314,13 @@ async function scanCheck(
   };
   if (plan.status !== "pending") return { ...base, status: plan.status };
   try {
+    // Politeness fix (2026-08-15, approved): a small randomized delay
+    // before each real request, so a batch of checks doesn't fire as one
+    // instantaneous burst. This is the same idea as SCAN_CONCURRENCY
+    // above - slowing down, not disguising anything about the request.
+    await new Promise((resolve) =>
+      setTimeout(resolve, SCAN_REQUEST_DELAY_MS + Math.random() * 600),
+    );
     // Priority-1 fix (2026-08-14): the previous self-identifying
     // "HamadafHahaserReportBot/1.0" user-agent appeared to trigger
     // CAPTCHA/anti-bot walls on most automatic sources (confirmed via an
