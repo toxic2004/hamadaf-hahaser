@@ -126,16 +126,20 @@ test("report shows a book again only for a new or lower delivered price", async 
   );
 });
 
-test("report accepts only a known delivered total up to 30 shekels", async () => {
-  const { MAX_REPORT_TOTAL, reportableOfferTotal } = await core();
+test("report accepts any known delivered total, and dealTier classifies used vs new (two-tier pricing, 2026-08-16)", async () => {
+  const { MAX_REPORT_TOTAL, reportableOfferTotal, dealTier } = await core();
   assert.equal(MAX_REPORT_TOTAL, 30);
   assert.equal(
     reportableOfferTotal({ shipping_known: true, total_price: 30 }),
     30,
   );
+  // Two-tier pricing fix: totals above 30 are no longer rejected outright -
+  // new-book sources (Evrit, Steimatzky, Booknet) never price near 30 ₪ and
+  // could never appear in a report otherwise. They're still valid, just
+  // classified into the "new" (informational) tier by dealTier().
   assert.equal(
-    reportableOfferTotal({ shipping_known: true, total_price: 30.01 }),
-    null,
+    reportableOfferTotal({ shipping_known: true, total_price: 96 }),
+    96,
   );
   assert.equal(
     reportableOfferTotal({ shipping_known: false, total_price: 20 }),
@@ -145,6 +149,10 @@ test("report accepts only a known delivered total up to 30 shekels", async () =>
     reportableOfferTotal({ shipping_known: true, total_price: null }),
     null,
   );
+  assert.equal(dealTier(30), "used");
+  assert.equal(dealTier(30.01), "new");
+  assert.equal(dealTier(96), "new");
+  assert.equal(dealTier(0), "used");
 });
 
 test("report quality rejects search pages, partial scans, and empty reports", async () => {
@@ -224,7 +232,14 @@ test("email content omits scanner and cover metrics", () => {
     /item_price,total_price,shipping_known,source_url/,
   );
   assert.match(emailBuilder, /\.not\("total_price", "is", null\)/);
-  assert.match(emailBuilder, /\.lte\("total_price", MAX_REPORT_TOTAL\)/);
+  // Two-tier pricing fix (2026-08-16): the .lte("total_price",
+  // MAX_REPORT_TOTAL) filter was removed from the SQL query entirely -
+  // every valid offer is now fetched, and dealTier() classifies it.
+  assert.doesNotMatch(
+    emailBuilder,
+    /\.lte\("total_price", MAX_REPORT_TOTAL\)/,
+  );
+  assert.match(emailBuilder, /dealTier/);
   assert.match(emailBuilder, /מחיר כולל משלוח/);
   assert.match(emailBuilder, /ירידת מחיר/);
   assert.match(emailBuilder, /הצעה חדשה/);
@@ -235,12 +250,31 @@ test("email content omits scanner and cover metrics", () => {
   assert.match(emailBuilder, /background:#102a43/);
   assert.match(emailBuilder, /background:#2dd4bf/);
   assert.match(emailBuilder, /background:#ffffff/);
-  assert.match(emailBuilder, /style="display:block;background:#0f766e/);
+  assert.match(emailBuilder, /style="display:block;background:\$\{buttonColor\}/);
   assert.doesNotMatch(emailBuilder, /<style[\s>]/i);
   assert.doesNotMatch(emailBuilder, /class=/i);
   assert.doesNotMatch(emailBuilder, /<script[\s>]/i);
   assert.doesNotMatch(emailBuilder, /מצאנו \$\{displayOffers\.length\}/);
   assert.doesNotMatch(emailBuilder, /לא נמצאה הצעה מתאימה/);
+});
+
+test("two-tier pricing (2026-08-16): email renders separate used/new sections, never phrasing new-book offers as a recommendation", () => {
+  const source = fs.readFileSync(
+    path.join(root, "supabase/functions/alerts/index.ts"),
+    "utf8",
+  );
+  const emailBuilder = source.slice(
+    source.indexOf("async function buildReportEmail"),
+    source.indexOf("function runIsDue"),
+  );
+  assert.match(emailBuilder, /usedOffers/);
+  assert.match(emailBuilder, /newOffers/);
+  assert.match(emailBuilder, /מידע בלבד/);
+  assert.match(emailBuilder, /הצעות יד שנייה/);
+  assert.match(emailBuilder, /ספרים חדשים/);
+  // The new-tier badge/section text must never claim it's a recommendation.
+  assert.doesNotMatch(emailBuilder, /מומלץ[^`]*ספר חדש/);
+  assert.match(emailBuilder, /לא המלצת רכישה/);
 });
 
 test("empty or incomplete reports never enter the Gmail queue", () => {

@@ -6,6 +6,7 @@ import {
   isUuid,
   jerusalemParts,
   MAX_REPORT_TOTAL,
+  dealTier,
   priceDrop,
   priceDropDedupeKey,
   reportableOfferTotal,
@@ -606,7 +607,13 @@ async function buildReportEmail(
       .in("availability_status", ["במלאי", "לא במלאי"])
       .eq("shipping_known", true)
       .not("total_price", "is", null)
-      .lte("total_price", MAX_REPORT_TOTAL)
+      // Two-tier pricing fix (2026-08-16, approved): removed the total-
+      // price cap that used to sit here (a .lte on total_price). New-book
+      // sources (Evrit, Steimatzky, Booknet/Tzomet Sfarim) never price
+      // near 30 ₪, so that filter meant they could never appear in a
+      // report at all. Now every valid offer is fetched, and dealTier()
+      // below classifies each one into the "used" (recommended, <= 30 ₪)
+      // or "new" (informational only, no cap) section of the email.
       .order("last_checked_at", { ascending: false, nullsFirst: false }),
     service()
       .from("notifications")
@@ -675,31 +682,64 @@ async function buildReportEmail(
   const displayOffers = [
     ...relevantOffers,
     ...activeOffers.map((offer) => ({ ...offer, change_type: "active" })),
-  ].slice(0, 15);
+  ].slice(0, 20);
   const pendingAlerts = pendingAlertsResult.data || [];
-  const cards = displayOffers
-    .map((offer: Record<string, any>) => {
-      const book = bookById.get(offer.book_id) || {};
-      const price = Number(offer.total_price).toFixed(2);
-      const availabilityStyle =
-        offer.availability_status === "במלאי"
-          ? "background:#dcfce7;color:#166534;border:1px solid #bbf7d0;"
-          : "background:#f1f5f9;color:#475569;border:1px solid #dbe3ed;";
-      const changeLabel =
-        offer.change_type === "lower"
-          ? "ירידת מחיר"
-          : offer.change_type === "new"
-            ? "הצעה חדשה"
-            : "ללא שינוי במחיר";
-      return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:separate;background:#ffffff;border:1px solid #d8e4ee;border-radius:18px;margin:0 0 14px 0;box-shadow:0 8px 24px rgba(15,35,58,0.08);"><tr><td style="height:5px;background:#22c7a9;border-radius:18px 18px 0 0;font-size:0;line-height:0;">&nbsp;</td></tr><tr><td style="padding:22px 22px 20px 22px;text-align:right;direction:rtl;"><div style="font-family:Arial,sans-serif;font-size:21px;line-height:1.35;font-weight:800;color:#102a43;margin:0 0 4px 0;">${escapeHtml(book.title)}</div><div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5;color:#62758a;margin:0 0 5px 0;">${escapeHtml(book.author || "המחבר לא צוין")}</div><div style="font-family:Arial,sans-serif;font-size:13px;line-height:1.5;color:#0f766e;font-weight:700;margin:0 0 16px 0;">${escapeHtml(offer.source)} | ${changeLabel}</div><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:separate;background:#f0fdfa;border:1px solid #ccfbf1;border-radius:13px;margin:0 0 14px 0;"><tr><td style="padding:14px 16px;text-align:right;direction:rtl;"><div style="font-family:Arial,sans-serif;font-size:12px;line-height:1.4;font-weight:700;color:#0f766e;margin:0 0 2px 0;">מחיר כולל משלוח</div><div style="font-family:Arial,sans-serif;font-size:31px;line-height:1.15;font-weight:900;color:#0f172a;letter-spacing:-0.5px;">${price} ₪</div></td></tr></table><div style="display:inline-block;${availabilityStyle}border-radius:999px;padding:7px 12px;font-family:Arial,sans-serif;font-size:13px;line-height:1;font-weight:800;margin:0 0 16px 0;">${escapeHtml(offer.availability_status)}</div><a href="${escapeHtml(offer.source_url)}" style="display:block;background:#0f766e;color:#ffffff;text-decoration:none;text-align:center;border-radius:11px;padding:13px 18px;font-family:Arial,sans-serif;font-size:15px;line-height:1.3;font-weight:800;">לצפייה במוצר</a></td></tr></table>`;
-    })
-    .join("");
+  // Two-tier pricing fix (2026-08-16, approved): split by dealTier() into
+  // "used" (recommended - up to MAX_REPORT_TOTAL, same green styling as
+  // before) and "new" (informational only - amber styling, explicit
+  // "מידע בלבד" badge, never phrased as a recommendation). Each section is
+  // capped separately so one tier can't crowd out the other.
+  const usedOffers = displayOffers
+    .filter((offer) => dealTier(Number(offer.total_price)) === "used")
+    .slice(0, 10);
+  const newOffers = displayOffers
+    .filter((offer) => dealTier(Number(offer.total_price)) === "new")
+    .slice(0, 10);
+
+  function offerCard(offer: Record<string, any>, tier: "used" | "new") {
+    const book = bookById.get(offer.book_id) || {};
+    const price = Number(offer.total_price).toFixed(2);
+    const availabilityStyle =
+      offer.availability_status === "במלאי"
+        ? "background:#dcfce7;color:#166534;border:1px solid #bbf7d0;"
+        : "background:#f1f5f9;color:#475569;border:1px solid #dbe3ed;";
+    const changeLabel =
+      offer.change_type === "lower"
+        ? "ירידת מחיר"
+        : offer.change_type === "new"
+          ? "הצעה חדשה"
+          : "ללא שינוי במחיר";
+    const accentColor = tier === "used" ? "#22c7a9" : "#f59e0b";
+    const priceBoxBg = tier === "used" ? "#f0fdfa" : "#fffbeb";
+    const priceBoxBorder = tier === "used" ? "#ccfbf1" : "#fde68a";
+    const priceLabelColor = tier === "used" ? "#0f766e" : "#92400e";
+    const priceLabel =
+      tier === "used" ? "מחיר כולל משלוח" : "מחיר כולל משלוח (ספר חדש)";
+    const tierBadge =
+      tier === "new"
+        ? `<div style="display:inline-block;background:#fef3c7;color:#92400e;border:1px solid #fde68a;border-radius:999px;padding:6px 11px;font-family:Arial,sans-serif;font-size:12px;line-height:1;font-weight:800;margin:0 0 12px 0;">מידע בלבד - לא הצעת יד שנייה</div><br>`
+        : "";
+    const buttonColor = tier === "used" ? "#0f766e" : "#92400e";
+    return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:separate;background:#ffffff;border:1px solid #d8e4ee;border-radius:18px;margin:0 0 14px 0;box-shadow:0 8px 24px rgba(15,35,58,0.08);"><tr><td style="height:5px;background:${accentColor};border-radius:18px 18px 0 0;font-size:0;line-height:0;">&nbsp;</td></tr><tr><td style="padding:22px 22px 20px 22px;text-align:right;direction:rtl;">${tierBadge}<div style="font-family:Arial,sans-serif;font-size:21px;line-height:1.35;font-weight:800;color:#102a43;margin:0 0 4px 0;">${escapeHtml(book.title)}</div><div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5;color:#62758a;margin:0 0 5px 0;">${escapeHtml(book.author || "המחבר לא צוין")}</div><div style="font-family:Arial,sans-serif;font-size:13px;line-height:1.5;color:#0f766e;font-weight:700;margin:0 0 16px 0;">${escapeHtml(offer.source)} | ${changeLabel}</div><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:separate;background:${priceBoxBg};border:1px solid ${priceBoxBorder};border-radius:13px;margin:0 0 14px 0;"><tr><td style="padding:14px 16px;text-align:right;direction:rtl;"><div style="font-family:Arial,sans-serif;font-size:12px;line-height:1.4;font-weight:700;color:${priceLabelColor};margin:0 0 2px 0;">${priceLabel}</div><div style="font-family:Arial,sans-serif;font-size:31px;line-height:1.15;font-weight:900;color:#0f172a;letter-spacing:-0.5px;">${price} ₪</div></td></tr></table><div style="display:inline-block;${availabilityStyle}border-radius:999px;padding:7px 12px;font-family:Arial,sans-serif;font-size:13px;line-height:1;font-weight:800;margin:0 0 16px 0;">${escapeHtml(offer.availability_status)}</div><a href="${escapeHtml(offer.source_url)}" style="display:block;background:${buttonColor};color:#ffffff;text-decoration:none;text-align:center;border-radius:11px;padding:13px 18px;font-family:Arial,sans-serif;font-size:15px;line-height:1.3;font-weight:800;">לצפייה במוצר</a></td></tr></table>`;
+  }
+
+  function sectionHeader(title: string, subtitle: string) {
+    return `<div style="padding:6px 4px 12px 4px;text-align:right;direction:rtl;"><div style="font-family:Arial,sans-serif;font-size:18px;line-height:1.3;font-weight:900;color:#102a43;margin:0 0 3px 0;">${title}</div><div style="font-family:Arial,sans-serif;font-size:13px;line-height:1.5;color:#62758a;">${subtitle}</div></div>`;
+  }
+
+  const usedSection = usedOffers.length
+    ? `${sectionHeader("הצעות יד שנייה - עד " + MAX_REPORT_TOTAL + " ₪", "מומלצות, מחיר כולל משלוח")}${usedOffers.map((offer) => offerCard(offer, "used")).join("")}`
+    : "";
+  const newSection = newOffers.length
+    ? `${sectionHeader("ספרים חדשים - מעל " + MAX_REPORT_TOTAL + " ₪", "מידע בלבד, לא המלצת רכישה")}${newOffers.map((offer) => offerCard(offer, "new")).join("")}`
+    : "";
+
   const displayedBookIds = new Set(displayOffers.map((offer) => offer.book_id));
   const bundledNotificationIds = pendingAlerts
     .filter((alert) => displayedBookIds.has(alert.book_id))
     .map((alert) => alert.id);
   const emailHtml = displayOffers.length
-    ? `<!doctype html><html lang="he" dir="rtl" style="margin:0;padding:0;background:#edf3f8;"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;padding:0;background:#edf3f8;color:#102a43;font-family:Arial,sans-serif;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#edf3f8" style="width:100%;border-collapse:collapse;background:#edf3f8;"><tr><td align="center" style="padding:20px 10px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:680px;border-collapse:separate;"><tr><td bgcolor="#102a43" style="background:#102a43;border-radius:20px;padding:0;text-align:right;direction:rtl;overflow:hidden;"><div style="height:6px;background:#2dd4bf;font-size:0;line-height:0;">&nbsp;</div><div style="padding:25px 25px 27px 25px;"><div style="display:inline-block;background:#163b5c;border:1px solid #285978;border-radius:999px;padding:6px 11px;font-family:Arial,sans-serif;font-size:12px;line-height:1;color:#78f2d2;font-weight:800;letter-spacing:0.3px;margin:0 0 12px 0;">המדף החסר</div><div style="font-family:Arial,sans-serif;font-size:28px;line-height:1.25;font-weight:900;color:#ffffff;margin:0 0 7px 0;">ספרים שמצאנו עבורך</div><div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.6;color:#b9ccdc;">הצעות מאומתות במחיר כולל של עד 30 ש״ח</div></div></td></tr><tr><td style="height:16px;font-size:0;line-height:0;">&nbsp;</td></tr><tr><td style="padding:0;text-align:right;direction:rtl;">${cards}</td></tr></table></td></tr></table></body></html>`
+    ? `<!doctype html><html lang="he" dir="rtl" style="margin:0;padding:0;background:#edf3f8;"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;padding:0;background:#edf3f8;color:#102a43;font-family:Arial,sans-serif;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#edf3f8" style="width:100%;border-collapse:collapse;background:#edf3f8;"><tr><td align="center" style="padding:20px 10px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:680px;border-collapse:separate;"><tr><td bgcolor="#102a43" style="background:#102a43;border-radius:20px;padding:0;text-align:right;direction:rtl;overflow:hidden;"><div style="height:6px;background:#2dd4bf;font-size:0;line-height:0;">&nbsp;</div><div style="padding:25px 25px 27px 25px;"><div style="display:inline-block;background:#163b5c;border:1px solid #285978;border-radius:999px;padding:6px 11px;font-family:Arial,sans-serif;font-size:12px;line-height:1;color:#78f2d2;font-weight:800;letter-spacing:0.3px;margin:0 0 12px 0;">המדף החסר</div><div style="font-family:Arial,sans-serif;font-size:28px;line-height:1.25;font-weight:900;color:#ffffff;margin:0 0 7px 0;">ספרים שמצאנו עבורך</div><div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.6;color:#b9ccdc;">הצעות יד שנייה עד ${MAX_REPORT_TOTAL} ₪, וספרים חדשים כמידע נוסף</div></div></td></tr><tr><td style="height:16px;font-size:0;line-height:0;">&nbsp;</td></tr><tr><td style="padding:0;text-align:right;direction:rtl;">${usedSection}${newSection}</td></tr></table></td></tr></table></body></html>`
     : null;
   return {
     emailHtml,
