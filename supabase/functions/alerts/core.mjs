@@ -61,11 +61,25 @@ export function isDirectProductUrl(value) {
 }
 
 export function reportableOfferTotal(offer) {
+  // Two-tier pricing fix (2026-08-16, approved). Previously this rejected
+  // anything over MAX_REPORT_TOTAL outright, which meant new-book sources
+  // (Evrit, Steimatzky, Booknet/Tzomet Sfarim - all sell new copies, never
+  // near 30 ₪) could NEVER appear in a report no matter how well scanning
+  // worked. The user's actual rule has two tiers, not one cutoff: see
+  // dealTier() below, which is what now does the classification.
   if (offer?.shipping_known !== true || offer?.total_price === null) return null;
   const total = Number(offer?.total_price);
-  if (!Number.isFinite(total) || total < 0 || total > MAX_REPORT_TOTAL)
-    return null;
+  if (!Number.isFinite(total) || total < 0) return null;
   return total;
+}
+
+// "used" = recommend (matches the previous single-cap behavior exactly for
+// anything <= MAX_REPORT_TOTAL). "new" = informational only, per the
+// user's explicit instruction (2026-08-16) that an above-target offer can
+// only appear clearly marked as information, never as a recommendation,
+// with no upper cap.
+export function dealTier(total) {
+  return total <= MAX_REPORT_TOTAL ? "used" : "new";
 }
 
 export function isCompleteReportOffer(offer) {
@@ -148,6 +162,11 @@ export function reportOfferChanges(offers, deliveredReports = []) {
 
 export function dealTotal(offer, threshold) {
   const total = reportableOfferTotal(offer);
+  // "Deal" instant-alert notifications are specifically about used-book
+  // bargains under the target price - unlike the daily report (which now
+  // also shows new-book listings as information, see dealTier() above),
+  // an instant "great deal" alert should stay capped at MAX_REPORT_TOTAL.
+  // A 90 ₪ new book is not what this alert type means.
   if (
     offer.edition_language !== "עברית" ||
     offer.availability_status !== "במלאי" ||
@@ -155,6 +174,7 @@ export function dealTotal(offer, threshold) {
     !offer.active ||
     offer.is_removed ||
     total === null ||
+    total > MAX_REPORT_TOTAL ||
     Number(offer.deal_score || 0) < threshold
   )
     return null;
