@@ -290,6 +290,38 @@ export function classifySearchResponse({
       note: "שם הספר חסר ולכן לא ניתן לבצע התאמה.",
     };
   }
+  // Evrit parser (2026-08-16, approved). The search page only confirms a
+  // matching product link exists - price and stock require a second fetch
+  // of the product page itself (done in index.ts, same pattern already
+  // used for Rebooks shipping). This returns an incomplete offer stub
+  // (itemPrice: null) as a signal for that enrichment step to fill in;
+  // if enrichment fails, index.ts drops it rather than storing a broken
+  // price_offers row.
+  if (sourceId === "evrit") {
+    const productUrl = extractEvritProductLink(text, title);
+    if (productUrl) {
+      return {
+        status: "found",
+        resultCount: 1,
+        note: "נמצא קישור מדויק לדף המוצר, ממתין לאימות מחיר ומלאי.",
+        offers: [
+          {
+            source: "עברית",
+            sourceListingKey: productUrl,
+            listingTitle: title,
+            sourceUrl: productUrl,
+            itemPrice: null,
+            availabilityStatus: null,
+            condition: "חדש",
+            matchType: "מדויקת",
+            editionLanguage: "עברית",
+            shippingKnown: false,
+            shippingPrice: null,
+          },
+        ],
+      };
+    }
+  }
   const offers = extractSourceOffers({ sourceId, title, body: text });
   if (offers.length) {
     return {
@@ -459,4 +491,87 @@ export function bestKnownShipping(options, availableBranches = []) {
   return candidates.reduce((best, candidate) =>
     candidate.price < best.price ? candidate : best,
   );
+}
+
+// Evrit (e-vrit.co.il) parser (2026-08-16, approved). Unlike Rebooks,
+// shipping here is a fixed, site-wide published policy (help.e-vrit.co.il,
+// confirmed live 2026-08-16), not something shown per-product:
+//   - שליח עד הבית (courier): 29 ₪
+//   - נקודת חלוקה (distribution point): 15 ₪
+//   - איסוף עצמי (self-pickup): free, from a single fixed warehouse
+//     ("בית ידיעות אחרונות, רחוב מוזס 1 ראשון לציון") - unlike Rebooks'
+//     many branches, this is the same one location for every order, and
+//     Rishon LeZion is already in the approved pickup list. So pickup is
+//     treated as always available whenever the book itself is in stock -
+//     no per-book branch lookup needed, unlike Rebooks.
+// These are constants, not parsed from any page, and reuse the exact same
+// bestKnownShipping()/isApprovedPickupBranch() already built for Rebooks.
+const EVRIT_SHIPPING_OPTIONS = Object.freeze({
+  pickup: { price: 0 },
+  distributionPoint: { price: 15 },
+  courier: { price: 29 },
+});
+const EVRIT_PICKUP_LOCATION = Object.freeze(["ראשון לציון"]);
+
+export function evritShipping() {
+  return bestKnownShipping(EVRIT_SHIPPING_OPTIONS, EVRIT_PICKUP_LOCATION);
+}
+
+// Finds the product page URL for an exact title match on an Evrit search
+// results page. Evrit product URLs follow /product/{id}/{slug} (case seen
+// both ways in the wild). This does not assume specific CSS classes -
+// only that a matching product is linked with the title as visible link
+// text, which is the one structural fact confirmed from real search
+// engine indexing of these exact URLs.
+const EVRIT_PRODUCT_LINK_PATTERN =
+  /<a\b[^>]*href=["']([^"']*\/[Pp]roduct\/\d+\/[^"']*)["'][^>]*>([\s\S]*?)<\/a>/g;
+
+export function extractEvritProductLink(html, title) {
+  const wantedTitle = normalizeSearchText(title);
+  if (!wantedTitle) return null;
+  const matches = [...String(html || "").matchAll(EVRIT_PRODUCT_LINK_PATTERN)];
+  for (const match of matches) {
+    const linkText = textContent(match[2]);
+    if (normalizeSearchText(linkText) === wantedTitle) {
+      return decodeHtml(match[1]);
+    }
+  }
+  return null;
+}
+
+// Parses a single Evrit product page for the printed-book price and
+// whether it is currently purchasable. "מודפס" only appears with a price
+// when a print edition is sold at all (Evrit also sells digital/audio
+// editions on the same page, which must not be mistaken for a print
+// price). Confirmed live on a real product page (2026-08-16): "מודפס"
+// immediately followed by "₪76.8" text, with no explicit out-of-stock
+// marker anywhere nearby on that particular (in-stock) example - the
+// "אזל" check below follows the same convention already used for Rebooks
+// and is Evrit's most likely out-of-stock wording, but has not been
+// confirmed against a live out-of-stock Evrit page.
+function evritPrintPriceNear(text) {
+  const index = text.indexOf("מודפס");
+  if (index < 0) return null;
+  const window = text.slice(index, index + 60);
+  // Real format confirmed live (2026-08-16): the ₪ symbol comes BEFORE
+  // the number ("₪76.8"), the reverse of the Rebooks/general convention
+  // used elsewhere in this file.
+  const match = window.match(/₪\s*(\d{1,4}(?:\.\d{1,2})?)/);
+  return match ? Number(match[1]) : null;
+}
+
+export function extractEvritProductDetails(html) {
+  const text = textContent(html);
+  const itemPrice = evritPrintPriceNear(text);
+  if (itemPrice === null) return null;
+  const printIndex = text.indexOf("מודפס");
+  const nearbyWindow = text.slice(
+    Math.max(0, printIndex - 40),
+    printIndex + 150,
+  );
+  const outOfStock = /אזל/.test(nearbyWindow);
+  return {
+    itemPrice,
+    availabilityStatus: outOfStock ? "לא במלאי" : "במלאי",
+  };
 }

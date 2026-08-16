@@ -18,7 +18,9 @@ import {
 import {
   bestKnownShipping,
   classifySearchResponse,
+  evritShipping,
   extractAvailableBranches,
+  extractEvritProductDetails,
   extractShippingOptions,
   nextPreparationTarget,
   sourcePlan,
@@ -298,6 +300,58 @@ async function enrichRebooksShippingCosts(
   return enriched;
 }
 
+// Evrit enrichment (2026-08-16, approved). Unlike Rebooks (where the
+// search page already gives a complete offer and only shipping needs a
+// second fetch), Evrit's search page only confirms a matching product
+// link - price and stock come only from the product page itself. If that
+// fetch fails or no print price is found there (e.g. the book only has a
+// digital/audio edition), the offer is dropped entirely rather than
+// stored with a missing price - matching the existing rule that an
+// incomplete offer must never be saved.
+async function enrichEvritOffers(
+  sourceId: string,
+  offers: Array<Record<string, any>>,
+) {
+  if (sourceId !== "evrit" || !offers?.length) return offers;
+  const enriched: Array<Record<string, any>> = [];
+  for (const offer of offers) {
+    try {
+      const productResponse = await fetch(offer.sourceUrl, {
+        method: "GET",
+        redirect: "follow",
+        headers: {
+          accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.7",
+          "accept-language": "he-IL,he;q=0.9,en-US;q=0.6,en;q=0.5",
+          "user-agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+        },
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      });
+      if (productResponse.ok) {
+        const productBody = await productResponse.text();
+        const details = extractEvritProductDetails(productBody);
+        const shipping = evritShipping();
+        if (details && shipping) {
+          enriched.push({
+            ...offer,
+            itemPrice: details.itemPrice,
+            availabilityStatus: details.availabilityStatus,
+            shippingKnown: true,
+            shippingPrice: shipping.price,
+          });
+        }
+        // details === null (no print price found) -> offer dropped, not
+        // pushed at all - this book has no printed edition here.
+        continue;
+      }
+    } catch {
+      // Product page unreachable - offer dropped, not pushed, since it
+      // would otherwise be stored with no price at all.
+    }
+  }
+  return enriched;
+}
+
 async function scanCheck(
   check: Record<string, any>,
   book: Record<string, any>,
@@ -352,6 +406,10 @@ async function scanCheck(
     });
     if (classified.status === "found" && classified.offers?.length) {
       classified.offers = await enrichRebooksShippingCosts(
+        check.source_id,
+        classified.offers,
+      );
+      classified.offers = await enrichEvritOffers(
         check.source_id,
         classified.offers,
       );
