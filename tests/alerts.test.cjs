@@ -577,3 +577,42 @@ test("reportSubject never produces the older, non-conforming title format", asyn
   assert.doesNotMatch(subject, /^דוח (בוקר|ערב) של המדף החסר/);
   assert.match(subject, /^המדף החסר: דוח (בוקר|ערב) \d{2}\.\d{2}\.\d{4}$/);
 });
+
+test("SCAN_BATCH_SIZE is lowered to stay comfortably within the cron's 110s timeout (2026-08-16)", () => {
+  const source = fs.readFileSync(
+    path.join(root, "supabase/functions/alerts/index.ts"),
+    "utf8",
+  );
+  assert.match(source, /const SCAN_BATCH_SIZE = 30;/);
+  assert.doesNotMatch(source, /const SCAN_BATCH_SIZE = 80;/);
+});
+
+test("bundled notification IDs are marked emailed_at once their parent report is confirmed sent (2026-08-16 fix)", () => {
+  const source = fs.readFileSync(
+    path.join(root, "supabase/functions/alerts/index.ts"),
+    "utf8",
+  );
+  const deliverFn = source.slice(
+    source.indexOf("async function deliverQueuedGmailNotifications"),
+    source.indexOf("async function processSchedule"),
+  );
+  // The fix must read bundled_notification_ids from the notification's
+  // own metadata (already stored by buildReportEmail) and update those
+  // rows, scoped to this user and only if not already emailed - never a
+  // blanket update.
+  assert.match(deliverFn, /metadata\.bundled_notification_ids/);
+  assert.match(deliverFn, /\.in\("id", bundledIds\)/);
+  assert.match(deliverFn, /\.eq\("user_id", userId\)/);
+  assert.match(deliverFn, /\.is\("emailed_at", null\)/);
+  // Must happen only after the parent's own emailed_at update succeeded,
+  // not before - the bundled rows have already been delivered as part of
+  // the same email, so they should never be marked sent independently of
+  // their parent actually going out.
+  const parentMarkIndex = deliverFn.indexOf('update({ emailed_at: new Date().toISOString() })');
+  const bundledIndex = deliverFn.indexOf("bundledIds");
+  assert.ok(parentMarkIndex >= 0 && bundledIndex >= 0);
+  assert.ok(
+    parentMarkIndex < bundledIndex,
+    "parent notification must be marked emailed_at before bundled IDs are processed",
+  );
+});

@@ -53,7 +53,16 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") || "";
 const MAX_BODY_BYTES = 16_384;
-const SCAN_BATCH_SIZE = 80;
+// Batch-size fix (2026-08-16, approved): the production cron caller sets
+// timeout_milliseconds: 110000 (confirmed live via cron.job /
+// invoke_alerts_hourly). At the new politeness-fix pace (2 concurrent
+// requests, ~0.9-1.5s delay each, up to 5 real-fetch sources now that
+// Evrit/Steimatzky/Booknet parsers exist), a full 80-item batch could
+// approach or exceed that budget in a slow-network worst case. Lowering
+// this keeps each invocation comfortably inside the timeout so progress
+// stays steady and predictable across hourly runs, rather than
+// occasionally cutting a batch off mid-way.
+const SCAN_BATCH_SIZE = 30;
 // Politeness fix (2026-08-15, approved): every automatic source (Rebooks,
 // Simania, Steimatzky, Booknet, Sipur Hozer) returned HTTP 403 / an
 // explicit security-check page for 100% of requests in the first live run
@@ -1166,6 +1175,30 @@ async function deliverQueuedGmailNotifications(
         .is("emailed_at", null);
       if (marked.error) throw marked.error;
       delivered += 1;
+      // Bundled-notifications fix (2026-08-16, approved). buildReportEmail
+      // computes bundled_notification_ids (older pending alerts - price
+      // drops, deals, recheck reminders - for books that ended up shown
+      // in this report) and stores them in the report notification's own
+      // metadata, but nothing ever went back and marked THOSE original
+      // alert rows as emailed_at. They accumulated indefinitely: past
+      // notification_settings-level dedup and bundling logic worked, but
+      // the underlying rows just sat there forever, eventually risking
+      // the pendingAlertsResult .limit(100) query being crowded out by
+      // stale, already-bundled rows. This closes that gap: once the
+      // parent report is confirmed sent, its bundled alerts are marked
+      // sent too, since their content was already delivered inside it.
+      const bundledIds = Array.isArray(metadata.bundled_notification_ids)
+        ? (metadata.bundled_notification_ids as string[]).filter(Boolean)
+        : [];
+      if (bundledIds.length) {
+        const bundledMarked = await service()
+          .from("notifications")
+          .update({ emailed_at: new Date().toISOString() })
+          .in("id", bundledIds)
+          .eq("user_id", userId)
+          .is("emailed_at", null);
+        if (bundledMarked.error) throw bundledMarked.error;
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : "send failed";
       console.error("Gmail SMTP send failed", row.id, message);
