@@ -322,6 +322,67 @@ export function classifySearchResponse({
       };
     }
   }
+  // Booknet / Tzomet Sfarim parser (2026-08-16, approved). Unlike Evrit,
+  // the search-results page itself already has a complete, unambiguous
+  // offer (price + stock) - no second fetch needed, same pattern as
+  // Rebooks. Shipping is a fixed site-wide constant (see
+  // booknetShipping() above), applied directly here.
+  if (sourceId === "booknet") {
+    const offer = extractBooknetOffer(text, title);
+    if (offer) {
+      const shipping = booknetShipping();
+      return {
+        status: "found",
+        resultCount: 1,
+        note: "נמצאה התאמה מדויקת עם מחיר ומלאי מאומתים.",
+        offers: [
+          {
+            source: "צומת ספרים",
+            sourceListingKey: offer.sourceUrl,
+            listingTitle: title,
+            sourceUrl: offer.sourceUrl,
+            itemPrice: offer.itemPrice,
+            availabilityStatus: offer.availabilityStatus,
+            condition: "חדש",
+            matchType: "מדויקת",
+            editionLanguage: "עברית",
+            shippingKnown: Boolean(shipping),
+            shippingPrice: shipping ? shipping.price : null,
+          },
+        ],
+      };
+    }
+  }
+  // Steimatzky parser (2026-08-16, approved). Same two-step pattern as
+  // Evrit: the search page only confirms a matching product link - price
+  // and stock (with the print/digital ambiguity guard, see
+  // extractSteimatzkyOffer above) require a second fetch of the product
+  // page itself, done in index.ts.
+  if (sourceId === "steimatzky") {
+    const productUrl = extractSteimatzkyProductLink(text, title);
+    if (productUrl) {
+      return {
+        status: "found",
+        resultCount: 1,
+        note: "נמצא קישור מדויק לדף המוצר, ממתין לאימות מחיר ומלאי.",
+        offers: [
+          {
+            source: "סטימצקי",
+            sourceListingKey: productUrl,
+            listingTitle: title,
+            sourceUrl: productUrl,
+            itemPrice: null,
+            availabilityStatus: null,
+            condition: "חדש",
+            matchType: "מדויקת",
+            editionLanguage: "עברית",
+            shippingKnown: false,
+            shippingPrice: null,
+          },
+        ],
+      };
+    }
+  }
   const offers = extractSourceOffers({ sourceId, title, body: text });
   if (offers.length) {
     return {
@@ -574,4 +635,144 @@ export function extractEvritProductDetails(html) {
     itemPrice,
     availabilityStatus: outOfStock ? "לא במלאי" : "במלאי",
   };
+}
+
+// Booknet / Tzomet Sfarim parser (2026-08-16, approved). Confirmed live
+// (2026-08-16): booknet.co.il IS Tzomet Sfarim ("צומת ספרים") - the same
+// site, not a separate one. Unlike Evrit and Steimatzky, product cards
+// here are print-only with no digital-edition ambiguity anywhere - the
+// exact price is available directly on the search-results page itself,
+// same single-fetch pattern as Rebooks (no second product-page fetch
+// needed). Shipping is a fixed, site-wide published policy
+// (booknet.co.il/מדיניות-משלוחים, confirmed live 2026-08-16): נקודת
+// איסוף (distribution point) 17 ₪, שליח עד הבית (courier) 25 ₪, and free
+// self-pickup from a single fixed location ("משרדי צומת ספרים, רחוב
+// התקווה 6 רמלה") - Ramla is already in the approved pickup list, and
+// like Evrit this is the same location for every order.
+const BOOKNET_SHIPPING_OPTIONS = Object.freeze({
+  pickup: { price: 0 },
+  distributionPoint: { price: 17 },
+  courier: { price: 25 },
+});
+const BOOKNET_PICKUP_LOCATION = Object.freeze(["רמלה"]);
+
+export function booknetShipping() {
+  return bestKnownShipping(BOOKNET_SHIPPING_OPTIONS, BOOKNET_PICKUP_LOCATION);
+}
+
+// Confirmed live (2026-08-16) card structure repeats site-wide for every
+// book, both on the main product page's "מוצרים נוספים" related-items
+// strip and (by the same template) on search-result grids: title as an
+// anchor's visible text under a /מוצרים/ path, followed within the same
+// card by "מחיר נוכחי: NUM שח" and an "הוסף לסל" add-to-cart control when
+// purchasable.
+const BOOKNET_LINK_PATTERN =
+  /<a\b[^>]*href=["']([^"']*(?:מוצרים|%D7%9E%D7%95%D7%A6%D7%A8%D7%99%D7%9D)[^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi;
+
+export function extractBooknetOffer(html, title) {
+  const wantedTitle = normalizeSearchText(title);
+  if (!wantedTitle) return null;
+  const raw = String(html || "");
+  const matches = [...raw.matchAll(BOOKNET_LINK_PATTERN)];
+  for (const match of matches) {
+    const linkText = textContent(match[2]);
+    // Real link text (2026-08-16) can repeat the title exactly (e.g. an
+    // <img alt="title"> plus separate visible text both flatten to
+    // "title title") - handled precisely rather than with a loose
+    // substring check, which would risk false-matching a short title
+    // inside an unrelated longer one.
+    const normalizedLinkText = normalizeSearchText(linkText);
+    const isExactMatch = normalizedLinkText === wantedTitle;
+    const isDuplicatedMatch =
+      normalizedLinkText === `${wantedTitle} ${wantedTitle}`;
+    if (!isExactMatch && !isDuplicatedMatch) continue;
+    const sourceUrl = decodeHtml(match[1]);
+    const start = match.index || 0;
+    const windowText = textContent(raw.slice(start, start + 1500));
+    const priceMatch = windowText.match(
+      /מחיר נוכחי:\s*(\d{1,4}(?:\.\d{1,2})?)\s*שח/,
+    );
+    if (!priceMatch) continue;
+    const itemPrice = Number(priceMatch[1]);
+    if (!Number.isFinite(itemPrice) || itemPrice <= 0) continue;
+    const purchasable = /הוסף לסל/.test(windowText);
+    const outOfStock = /אזל|לא במלאי/.test(windowText) || !purchasable;
+    return {
+      sourceUrl,
+      itemPrice,
+      availabilityStatus: outOfStock ? "לא במלאי" : "במלאי",
+    };
+  }
+  return null;
+}
+
+// Steimatzky parser (2026-08-16, approved). Deliberately conservative:
+// a real fetched product page (2026-08-16) showed TWO different prices
+// for the same URL - a server-rendered meta tag (69 ₪) and a separately
+// labeled "ספר דיגיטלי ... מחיר מוצר 35.00 ₪" block in the visible page
+// content - for a title explicitly described as available in either
+// print or digital format. Which one the meta tag represents could not
+// be confirmed with certainty ahead of time. Per the user's explicit
+// instruction to only ever show print books, and this project's core
+// rule to never show an invented or uncertain price: if the page shows
+// a distinctly-labeled digital price that DIFFERS from the meta price,
+// this returns null (no offer) rather than guessing. Only when there is
+// no such conflicting digital block (single-format print-only pages,
+// which are common) is the meta price trusted.
+function steimatzkyMetaPrice(html) {
+  const match =
+    html.match(/property=["'](?:og:)?product:price:amount["'][^>]*content=["']([\d.]+)["']/i) ||
+    html.match(/content=["']([\d.]+)["'][^>]*property=["'](?:og:)?product:price:amount["']/i);
+  if (!match) return null;
+  const price = Number(match[1]);
+  return Number.isFinite(price) && price > 0 ? price : null;
+}
+
+export function extractSteimatzkyOffer(html) {
+  const price = steimatzkyMetaPrice(html);
+  if (price === null) return null;
+  const text = textContent(html);
+  const digitalMatch = text.match(
+    /ספר דיגיטלי[^₪]{0,60}מחיר מוצר\s*(\d+(?:\.\d+)?)\s*₪/,
+  );
+  if (digitalMatch && Number(digitalMatch[1]) !== price) {
+    // Ambiguous: cannot be sure the meta price is for the print edition.
+    return null;
+  }
+  const outOfStock = /אזל|חסר זמנית/.test(text);
+  return {
+    itemPrice: price,
+    availabilityStatus: outOfStock ? "לא במלאי" : "במלאי",
+  };
+}
+
+// Steimatzky product links seen live (2026-08-16) are bare 9-digit paths
+// (e.g. /012010227), not a /product/ prefix like Evrit - matched here
+// without assuming any particular CSS class, only that the title is the
+// link's visible text (the same structural assumption already used for
+// Evrit, still unverified against live search-results markup).
+const STEIMATZKY_LINK_PATTERN =
+  /<a\b[^>]*href=["']([^"']*\/\d{9}[^"']*)["'][^>]*>([\s\S]*?)<\/a>/g;
+
+export function extractSteimatzkyProductLink(html, title) {
+  const wantedTitle = normalizeSearchText(title);
+  if (!wantedTitle) return null;
+  const matches = [
+    ...String(html || "").matchAll(STEIMATZKY_LINK_PATTERN),
+  ];
+  for (const match of matches) {
+    const linkText = textContent(match[2]);
+    if (normalizeSearchText(linkText) === wantedTitle) {
+      return decodeHtml(match[1]);
+    }
+  }
+  return null;
+}
+
+export function steimatzkyShipping() {
+  // Confirmed live (2026-08-16, steimatzky.co.il/customer-service/shipping):
+  // no self-pickup option published for Steimatzky (unlike Evrit/Booknet).
+  // "דואר רשום" (registered mail, 10 ₪) is the cheapest published option,
+  // cheaper than "שליח עד הבית" (courier, 25 ₪).
+  return { price: 10, method: "registeredMail" };
 }
