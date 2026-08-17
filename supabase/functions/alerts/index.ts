@@ -22,8 +22,10 @@ import {
   extractAvailableBranches,
   extractEvritProductDetails,
   extractShippingOptions,
+  extractSteimatzkyOffer,
   nextPreparationTarget,
   sourcePlan,
+  steimatzkyShipping,
 } from "./scanner-core.mjs";
 import { sendMailViaGmailSmtp } from "./smtp-client.mjs";
 
@@ -308,6 +310,21 @@ async function enrichRebooksShippingCosts(
 // digital/audio edition), the offer is dropped entirely rather than
 // stored with a missing price - matching the existing rule that an
 // incomplete offer must never be saved.
+
+// URL-resolution fix (2026-08-16): extractEvritProductLink/
+// extractSteimatzkyProductLink return whatever href appeared in the raw
+// HTML, which could be root-relative ("/Product/9199/...") rather than
+// absolute - fetch() requires absolute URLs, and a relative link would
+// also be useless as the clickable link shown in the actual email. This
+// resolves against the known site origin either way.
+function resolveUrl(origin: string, maybeRelative: string) {
+  try {
+    return new URL(maybeRelative, origin).toString();
+  } catch {
+    return maybeRelative;
+  }
+}
+
 async function enrichEvritOffers(
   sourceId: string,
   offers: Array<Record<string, any>>,
@@ -315,8 +332,9 @@ async function enrichEvritOffers(
   if (sourceId !== "evrit" || !offers?.length) return offers;
   const enriched: Array<Record<string, any>> = [];
   for (const offer of offers) {
+    const resolvedUrl = resolveUrl("https://www.e-vrit.co.il", offer.sourceUrl);
     try {
-      const productResponse = await fetch(offer.sourceUrl, {
+      const productResponse = await fetch(resolvedUrl, {
         method: "GET",
         redirect: "follow",
         headers: {
@@ -334,6 +352,8 @@ async function enrichEvritOffers(
         if (details && shipping) {
           enriched.push({
             ...offer,
+            sourceUrl: resolvedUrl,
+            sourceListingKey: resolvedUrl,
             itemPrice: details.itemPrice,
             availabilityStatus: details.availabilityStatus,
             shippingKnown: true,
@@ -347,6 +367,57 @@ async function enrichEvritOffers(
     } catch {
       // Product page unreachable - offer dropped, not pushed, since it
       // would otherwise be stored with no price at all.
+    }
+  }
+  return enriched;
+}
+
+// Steimatzky enrichment (2026-08-16, approved). Same second-fetch pattern
+// as Evrit: search page confirms a matching link, product page confirms
+// price/stock. extractSteimatzkyOffer() also applies the print/digital
+// ambiguity guard - a null result here (ambiguous or unreadable page)
+// drops the offer entirely, same as a failed fetch.
+async function enrichSteimatzkyOffers(
+  sourceId: string,
+  offers: Array<Record<string, any>>,
+) {
+  if (sourceId !== "steimatzky" || !offers?.length) return offers;
+  const enriched: Array<Record<string, any>> = [];
+  for (const offer of offers) {
+    const resolvedUrl = resolveUrl("https://www.steimatzky.co.il", offer.sourceUrl);
+    try {
+      const productResponse = await fetch(resolvedUrl, {
+        method: "GET",
+        redirect: "follow",
+        headers: {
+          accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.7",
+          "accept-language": "he-IL,he;q=0.9,en-US;q=0.6,en;q=0.5",
+          "user-agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+        },
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      });
+      if (productResponse.ok) {
+        const productBody = await productResponse.text();
+        const details = extractSteimatzkyOffer(productBody);
+        const shipping = steimatzkyShipping();
+        if (details && shipping) {
+          enriched.push({
+            ...offer,
+            sourceUrl: resolvedUrl,
+            sourceListingKey: resolvedUrl,
+            itemPrice: details.itemPrice,
+            availabilityStatus: details.availabilityStatus,
+            shippingKnown: true,
+            shippingPrice: shipping.price,
+          });
+        }
+        // details === null -> either an unreadable page or the
+        // print/digital ambiguity guard - offer dropped, not pushed.
+        continue;
+      }
+    } catch {
+      // Product page unreachable - offer dropped, not pushed.
     }
   }
   return enriched;
@@ -410,6 +481,10 @@ async function scanCheck(
         classified.offers,
       );
       classified.offers = await enrichEvritOffers(
+        check.source_id,
+        classified.offers,
+      );
+      classified.offers = await enrichSteimatzkyOffers(
         check.source_id,
         classified.offers,
       );
