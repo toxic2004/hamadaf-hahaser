@@ -1,0 +1,15 @@
+{
+  "name": "hamadaf-hahaser-render-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Standalone headless-browser rendering service for the המדף החסר scanner. Supabase Edge Functions cannot run a headless browser at all - this fills that gap for JS-heavy sources like Evrit.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "playwright": "^1.46.0"
+  }
+}
