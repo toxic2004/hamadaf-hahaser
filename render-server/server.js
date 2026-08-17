@@ -24,6 +24,14 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const SHARED_SECRET = process.env.RENDER_SHARED_SECRET || "";
 const NAV_TIMEOUT_MS = 20_000;
+// Real finding (2026-08-16, first live test): navigation with
+// waitUntil:"networkidle" completed successfully, but the page was still
+// showing its loading skeleton ("טוען...") - the site's own network
+// traffic goes idle before the search results actually render into the
+// DOM. A fixed post-navigation wait for the loading text to disappear
+// closes that gap. Generous but bounded, so a genuinely-empty search
+// result doesn't hang the request forever.
+const RESULTS_WAIT_MS = 12_000;
 const MAX_HTML_BYTES = 4_000_000;
 
 if (!SHARED_SECRET) {
@@ -90,6 +98,22 @@ app.get("/render", async (req, res) => {
       waitUntil: "networkidle",
       timeout: NAV_TIMEOUT_MS,
     });
+    // See RESULTS_WAIT_MS comment above: wait for the page's own loading
+    // indicator to clear, rather than trusting network-idle alone. Not
+    // fatal if this times out - the page may genuinely have no results
+    // for this query, so we still return whatever HTML exists rather
+    // than failing the request outright.
+    try {
+      await page.waitForFunction(
+        () => !document.body || !document.body.innerText.includes("טוען"),
+        { timeout: RESULTS_WAIT_MS },
+      );
+    } catch {
+      // Loading indicator never cleared within the budget - proceed with
+      // whatever rendered so far; the caller (classifySearchResponse) is
+      // already designed to treat "no product link found" as a normal,
+      // non-fatal outcome.
+    }
     const html = await page.content();
     if (html.length > MAX_HTML_BYTES) {
       return res.status(502).json({ error: "rendered page too large" });
