@@ -616,3 +616,28 @@ test("bundled notification IDs are marked emailed_at once their parent report is
     "parent notification must be marked emailed_at before bundled IDs are processed",
   );
 });
+
+test("only Evrit's search fetch is routed through the render-server; every other source keeps the plain fetch (2026-08-16)", () => {
+  const source = fs.readFileSync(
+    path.join(root, "supabase/functions/alerts/index.ts"),
+    "utf8",
+  );
+  const scanCheckFn = source.slice(
+    source.indexOf("async function scanCheck"),
+    source.indexOf("async function ensureReportRun"),
+  );
+  assert.match(scanCheckFn, /check\.source_id === "evrit"/);
+  assert.match(scanCheckFn, /fetchRenderedHtml\(plan\.searchUrl\)/);
+  // The plain-fetch branch (used by every other source) must still exist
+  // unchanged - this is an else-branch, not a replacement.
+  assert.match(scanCheckFn, /response = await fetch\(plan\.searchUrl,/);
+});
+
+test("render-server credentials are cached like the Gmail app password, not fetched on every call (2026-08-16)", () => {
+  const source = fs.readFileSync(
+    path.join(root, "supabase/functions/alerts/index.ts"),
+    "utf8",
+  );
+  assert.match(source, /cachedRenderServerConfig/);
+  assert.match(source, /get_render_server_config/);
+});

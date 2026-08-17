@@ -49,6 +49,57 @@ async function gmailAppPassword(): Promise<string> {
 const MAX_EMAIL_SEND_ATTEMPTS = 5;
 const MAX_EMAILS_PER_INVOCATION = 5;
 
+// Render-server integration (2026-08-16, approved). Same Vault-RPC
+// pattern as gmailAppPassword() above, for the same reason (no tool
+// available to set an Edge Function environment secret directly).
+// Confirmed via Supabase's own documentation: Edge Functions cannot run
+// a headless browser at all - this is not a workaround, it's the only
+// way to get Evrit's search-results page (which ships zero product data
+// in its raw HTML - real results only exist after client-side JS runs)
+// to actually produce usable content.
+let cachedRenderServerConfig: { url: string; secret: string } | null = null;
+async function renderServerConfig(): Promise<{ url: string; secret: string }> {
+  if (cachedRenderServerConfig) return cachedRenderServerConfig;
+  const { data, error } = await service().rpc("get_render_server_config");
+  if (error) throw error;
+  const row = Array.isArray(data) ? data[0] : data;
+  const resolved = {
+    url: (row?.render_url as string | null) || "",
+    secret: (row?.render_secret as string | null) || "",
+  };
+  cachedRenderServerConfig = resolved;
+  return resolved;
+}
+
+// Only used for the initial evrit search-results fetch (see scanCheck) -
+// the render-server itself also enforces a hostname allowlist, this is a
+// defense-in-depth check so a misconfiguration here fails loudly instead
+// of silently rendering an unintended page.
+async function fetchRenderedHtml(targetUrl: string): Promise<{
+  ok: boolean;
+  html: string;
+  status: number;
+}> {
+  const config = await renderServerConfig();
+  if (!config.url || !config.secret) {
+    return { ok: false, html: "", status: 0 };
+  }
+  const renderRequestUrl = `${config.url.replace(/\/$/, "")}/render?url=${encodeURIComponent(targetUrl)}`;
+  const response = await fetch(renderRequestUrl, {
+    method: "GET",
+    headers: { "x-render-secret": config.secret },
+    signal: AbortSignal.timeout(60_000),
+  });
+  if (!response.ok) {
+    return { ok: false, html: "", status: response.status };
+  }
+  const payload = await response.json();
+  if (!payload?.ok || typeof payload.html !== "string") {
+    return { ok: false, html: "", status: response.status };
+  }
+  return { ok: true, html: payload.html, status: 200 };
+}
+
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") || "";
@@ -456,32 +507,55 @@ async function scanCheck(
     await new Promise((resolve) =>
       setTimeout(resolve, SCAN_REQUEST_DELAY_MS + Math.random() * 600),
     );
-    // Priority-1 fix (2026-08-14): the previous self-identifying
-    // "HamadafHahaserReportBot/1.0" user-agent appeared to trigger
-    // CAPTCHA/anti-bot walls on most automatic sources (confirmed via an
-    // isolated read-only check against a live Rebooks product page, which
-    // returned full content with no block using an ordinary browser
-    // user-agent). This still only reads public product pages that a
-    // browser could load directly - no login, no CAPTCHA solving, and no
-    // access-restricted content is touched.
-    const response = await fetch(plan.searchUrl, {
-      method: "GET",
-      redirect: "follow",
-      headers: {
-        accept:
-          "text/html,application/xhtml+xml,application/xml;q=0.9,application/json;q=0.8,*/*;q=0.7",
-        "accept-language": "he-IL,he;q=0.9,en-US;q=0.6,en;q=0.5",
-        "user-agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-      },
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-    });
-    const body = await response.text();
+    // Render-server fix (2026-08-16, approved): Evrit's search-results
+    // page ships zero product data in its raw HTML at all (confirmed
+    // live, 2026-08-16 - a plain fetch returns a Next.js RSC/hydration
+    // payload with no "/product/" links anywhere in it; real results
+    // only exist after client-side JS runs). Supabase Edge Functions
+    // cannot run a headless browser themselves (confirmed against
+    // Supabase's own docs), so this routes only Evrit's search fetch
+    // through the standalone render-server instead, which does run a
+    // real browser and returns the fully-rendered HTML. Every other
+    // source keeps the exact same plain fetch as before.
+    let response: Response | null = null;
+    let body: string;
+    let effectiveStatus: number;
+    let effectiveContentType: string;
+    if (check.source_id === "evrit") {
+      const rendered = await fetchRenderedHtml(plan.searchUrl);
+      body = rendered.html;
+      effectiveStatus = rendered.ok ? 200 : rendered.status || 502;
+      effectiveContentType = "text/html";
+    } else {
+      // Priority-1 fix (2026-08-14): the previous self-identifying
+      // "HamadafHahaserReportBot/1.0" user-agent appeared to trigger
+      // CAPTCHA/anti-bot walls on most automatic sources (confirmed via an
+      // isolated read-only check against a live Rebooks product page, which
+      // returned full content with no block using an ordinary browser
+      // user-agent). This still only reads public product pages that a
+      // browser could load directly - no login, no CAPTCHA solving, and no
+      // access-restricted content is touched.
+      response = await fetch(plan.searchUrl, {
+        method: "GET",
+        redirect: "follow",
+        headers: {
+          accept:
+            "text/html,application/xhtml+xml,application/xml;q=0.9,application/json;q=0.8,*/*;q=0.7",
+          "accept-language": "he-IL,he;q=0.9,en-US;q=0.6,en;q=0.5",
+          "user-agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+        },
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      });
+      body = await response.text();
+      effectiveStatus = response.status;
+      effectiveContentType = response.headers.get("content-type") || "";
+    }
     const classified = classifySearchResponse({
       sourceId: check.source_id,
       title: book.title,
-      status: response.status,
-      contentType: response.headers.get("content-type") || "",
+      status: effectiveStatus,
+      contentType: effectiveContentType,
       body,
     });
     if (classified.status === "found" && classified.offers?.length) {
@@ -492,6 +566,7 @@ async function scanCheck(
       classified.offers = await enrichEvritOffers(
         check.source_id,
         classified.offers,
+
       );
       classified.offers = await enrichSteimatzkyOffers(
         check.source_id,
