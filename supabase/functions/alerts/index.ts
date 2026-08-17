@@ -21,6 +21,7 @@ import {
   evritShipping,
   extractAvailableBranches,
   extractEvritProductDetails,
+  extractFindabookShipping,
   extractShippingOptions,
   extractSteimatzkyOffer,
   nextPreparationTarget,
@@ -362,7 +363,55 @@ async function enrichRebooksShippingCosts(
   return enriched;
 }
 
-// Evrit enrichment (2026-08-16, approved). Unlike Rebooks (where the
+// Findabook enrichment (2026-08-17, approved). Same second-fetch pattern
+// as Rebooks (item price already known from the search-results card,
+// only shipping needs a fetch to the product page) - but unlike Rebooks'
+// single site-wide policy, each Findabook seller states their own terms
+// in free text, so extractFindabookShipping() only trusts two known
+// patterns and returns null for anything else. Shipping stays unknown
+// rather than guessed for every listing that falls outside those two
+// patterns - this is expected to under-cover, which is the correct
+// tradeoff over inventing a number.
+async function enrichFindabookOffers(
+  sourceId: string,
+  offers: Array<Record<string, any>>,
+) {
+  if (sourceId !== "findabook" || !offers?.length) return offers;
+  const enriched: Array<Record<string, any>> = [];
+  for (const offer of offers) {
+    try {
+      const productResponse = await fetch(offer.sourceUrl, {
+        method: "GET",
+        redirect: "follow",
+        headers: {
+          accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.7",
+          "accept-language": "he-IL,he;q=0.9,en-US;q=0.6,en;q=0.5",
+          "user-agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+        },
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      });
+      if (productResponse.ok) {
+        const productBody = await productResponse.text();
+        const shipping = extractFindabookShipping(productBody);
+        if (shipping) {
+          enriched.push({
+            ...offer,
+            shippingKnown: true,
+            shippingPrice: shipping.price,
+          });
+          continue;
+        }
+      }
+    } catch {
+      // Product page unreachable - fall through and keep shipping unknown.
+    }
+    enriched.push(offer);
+  }
+  return enriched;
+}
+
+
 // search page already gives a complete offer and only shipping needs a
 // second fetch), Evrit's search page only confirms a matching product
 // link - price and stock come only from the product page itself. If that
@@ -569,6 +618,10 @@ async function scanCheck(
 
       );
       classified.offers = await enrichSteimatzkyOffers(
+        check.source_id,
+        classified.offers,
+      );
+      classified.offers = await enrichFindabookOffers(
         check.source_id,
         classified.offers,
       );

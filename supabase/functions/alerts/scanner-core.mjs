@@ -35,6 +35,10 @@ const SOURCE_PLANS = Object.freeze({
     mode: "automatic",
     url: (query) => `https://www.booknet.co.il/חיפוש?q=${query}`,
   },
+  findabook: {
+    mode: "automatic",
+    url: (query) => `https://www.findabook.co.il/result?mainSearchText=${query}`,
+  },
   sipur_hozer: {
     mode: "automatic",
     url: (query) => `https://rebooks.org.il/?s=${query}&post_type=product`,
@@ -348,6 +352,39 @@ export function classifySearchResponse({
             editionLanguage: "עברית",
             shippingKnown: Boolean(shipping),
             shippingPrice: shipping ? shipping.price : null,
+          },
+        ],
+      };
+    }
+  }
+  if (sourceId === "findabook") {
+    // Real fix (2026-08-17, approved): confirmed live, directly from
+    // Supabase's own IP, NOT blocked (200, real HTML) unlike Rebooks/
+    // Simania/Booknet/Yad2 on the same day. Item price and title match
+    // are already known from the search-results card itself (same
+    // pattern as Rebooks) - only per-seller shipping terms require a
+    // second fetch to the product page (done in index.ts), since
+    // Findabook is a private-seller marketplace with no site-wide
+    // shipping policy to fall back on.
+    const offer = extractFindabookOffer(text, title);
+    if (offer) {
+      return {
+        status: "found",
+        resultCount: 1,
+        note: "נמצאה התאמה מדויקת, ממתין לאימות תנאי משלוח של המוכר.",
+        offers: [
+          {
+            source: "Findabook",
+            sourceListingKey: offer.sourceUrl,
+            listingTitle: title,
+            sourceUrl: offer.sourceUrl,
+            itemPrice: offer.itemPrice,
+            availabilityStatus: findabookAvailability(),
+            condition: "יד שנייה",
+            matchType: "מדויקת",
+            editionLanguage: "עברית",
+            shippingKnown: false,
+            shippingPrice: null,
           },
         ],
       };
@@ -775,4 +812,81 @@ export function steimatzkyShipping() {
   // "דואר רשום" (registered mail, 10 ₪) is the cheapest published option,
   // cheaper than "שליח עד הבית" (courier, 25 ₪).
   return { price: 10, method: "registeredMail" };
+}
+
+// Findabook parser (2026-08-17, approved). Unlike Rebooks/Evrit/Booknet
+// (single retailer, one shipping policy), Findabook is a private-seller
+// peer marketplace (like Yad2/Simania) - confirmed live, 2026-08-17:
+// every seller writes their own shipping terms in free text on their own
+// product page, e.g. "עלות שליחת הספר בדואר 15.9 (דואר רשום)" or a
+// title/description tag "(המחיר כולל משלוח)" meaning price already
+// includes shipping. There is no site-wide constant to fall back on like
+// the other new sources. Confirmed NOT blocked (200, real HTML) directly
+// from Supabase's own IP, unlike Rebooks/Simania/Booknet/Yad2 today.
+//
+// Search-results card structure confirmed live: <a class="hover-text"
+// href="...">...</a> ... <h3>TITLE/AUTHOR</h3> ... <li
+// class="strong">PRICE ₪</li>. Title and author are concatenated with a
+// "/" in the h3 text (not a separate field), so matching checks that the
+// wanted title is the card's title followed by a word boundary, not an
+// exact string equality.
+const FINDABOOK_CARD_PATTERN =
+  /<a\s+class="hover-text"\s+href="([^"]+)"[^>]*>[\s\S]*?<h3>([^<]*)<\/h3>[\s\S]*?<li class="strong">\s*([\d.,]+)\s*₪/g;
+
+export function extractFindabookOffer(html, title) {
+  const wantedTitle = normalizeSearchText(title);
+  if (!wantedTitle) return null;
+  const text = String(html || "");
+  for (const match of text.matchAll(FINDABOOK_CARD_PATTERN)) {
+    const [, url, h3Text, priceText] = match;
+    // Real fix (2026-08-17): a naive "starts with the wanted title" check
+    // false-matched a short/generic title (e.g. "ספר") against a
+    // completely different, longer one that merely happened to start
+    // with the same word. Since title and author are always joined with
+    // "/" in this exact card format, splitting on it and requiring an
+    // EXACT match on the title portion alone is precise and avoids that
+    // risk entirely.
+    const titlePart = String(h3Text).split("/")[0];
+    if (normalizeSearchText(titlePart) !== wantedTitle) continue;
+    const itemPrice = Number(String(priceText).replace(",", "."));
+    if (!Number.isFinite(itemPrice) || itemPrice <= 0) continue;
+    return { sourceUrl: decodeHtml(url), itemPrice };
+  }
+  return null;
+}
+
+// Findabook listings never disappear into an "out of stock" state the
+// way a retailer's catalog does - a peer marketplace listing is removed
+// once sold, so if it still appears in search results with a price, it
+// is treated as available. This is an inference from how peer
+// marketplaces generally work, not a directly confirmed site rule -
+// noted explicitly since it differs from every other source in this
+// file, which all read an explicit stock marker.
+export function findabookAvailability() {
+  return "במלאי";
+}
+
+// Per-seller shipping terms (2026-08-17, approved) - deliberately
+// conservative. Only two patterns are trusted, both confirmed against
+// real listings live: an explicit "(המחיר כולל משלוח)" tag (shipping
+// already included in the item price, so 0 additional) or an explicit
+// seller-stated cost near "עלות שליחת הספר"/"עלות משלוח". Any listing
+// that states its shipping terms differently returns null (unknown) -
+// per the project's core rule, an unclear shipping cost must never be
+// guessed or defaulted to a number.
+export function extractFindabookShipping(html) {
+  const text = textContent(html);
+  if (/המחיר כולל משלוח/.test(text)) {
+    return { price: 0, method: "includedInPrice" };
+  }
+  const match = text.match(
+    /עלות (?:שליחת הספר|משלוח)[^\d]{0,20}(\d{1,3}(?:\.\d{1,2})?)/,
+  );
+  if (match) {
+    const price = Number(match[1]);
+    if (Number.isFinite(price) && price >= 0 && price < 200) {
+      return { price, method: "sellerStated" };
+    }
+  }
+  return null;
 }
