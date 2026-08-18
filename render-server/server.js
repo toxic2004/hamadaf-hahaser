@@ -114,7 +114,28 @@ app.get("/render", async (req, res) => {
       // already designed to treat "no product link found" as a normal,
       // non-fatal outcome.
     }
-    const html = await page.content();
+    // Real finding (2026-08-18, second live test): page.content() thrown
+    // right after the waitForFunction above resolved, with "Unable to
+    // retrieve content because the page is navigating and changing the
+    // content" - a race where the DOM is still mutating (React finishing
+    // its render pass) in the instant content() is called. A short settle
+    // delay plus a couple of retries closes this without adding much
+    // latency in the common case. (An earlier attempt at this exact fix
+    // was made but never actually committed to git before this.)
+    await page.waitForTimeout(400);
+    let html = null;
+    let lastContentError;
+    for (let attempt = 0; attempt < 3 && html === null; attempt += 1) {
+      try {
+        html = await page.content();
+      } catch (error) {
+        lastContentError = error;
+        await page.waitForTimeout(500);
+      }
+    }
+    if (html === null) {
+      throw lastContentError || new Error("page.content() failed repeatedly");
+    }
     if (html.length > MAX_HTML_BYTES) {
       return res.status(502).json({ error: "rendered page too large" });
     }
