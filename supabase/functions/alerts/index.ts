@@ -76,6 +76,26 @@ async function renderServerConfig(): Promise<{ url: string; secret: string }> {
 // the render-server itself also enforces a hostname allowlist, this is a
 // defense-in-depth check so a misconfiguration here fails loudly instead
 // of silently rendering an unintended page.
+//
+// Real, reproducible finding (2026-08-18, two separate full invocations):
+// a batch that included evrit checks consumed the ENTIRE 110s cron budget
+// (confirmed by the caller's own timeout, and separately by
+// completed_checks staying flat at exactly the same number across two
+// consecutive full-length invocations) - meaning zero of the other ~29
+// checks in that batch (across 10 much faster sources) got a chance to
+// finish and save. Render's free tier sleeps after inactivity and can
+// take 30-60s just to wake up on a cold request, on top of the render
+// server's own render budget (up to ~34s: NAV_TIMEOUT_MS + RESULTS_WAIT_MS
+// + settle/retry) - a cold evrit check could plausibly approach the full
+// 60s ceiling that was set here, and with SCAN_CONCURRENCY=2 that alone
+// can dominate the entire invocation.
+// Fix: bound evrit's per-check budget well below that, so a slow/cold
+// evrit check fails fast for THIS cycle (retried next cycle, by which
+// point the instance is likely already warm from this very attempt)
+// rather than starving the other 10 working sources of any progress at
+// all. This does not fix Render's cold-start behavior itself - it only
+// stops it from blocking unrelated sources.
+const RENDER_SERVER_TIMEOUT_MS = 20_000;
 async function fetchRenderedHtml(targetUrl: string): Promise<{
   ok: boolean;
   html: string;
@@ -89,7 +109,7 @@ async function fetchRenderedHtml(targetUrl: string): Promise<{
   const response = await fetch(renderRequestUrl, {
     method: "GET",
     headers: { "x-render-secret": config.secret },
-    signal: AbortSignal.timeout(60_000),
+    signal: AbortSignal.timeout(RENDER_SERVER_TIMEOUT_MS),
   });
   if (!response.ok) {
     return { ok: false, html: "", status: response.status };
