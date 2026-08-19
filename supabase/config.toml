@@ -1,2 +1,5 @@
 [functions.alerts]
 verify_jwt = false
+
+[functions.rebooks-simple-scan]
+verify_jwt = false

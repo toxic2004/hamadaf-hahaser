@@ -37,7 +37,8 @@ const SOURCE_PLANS = Object.freeze({
   },
   findabook: {
     mode: "automatic",
-    url: (query) => `https://www.findabook.co.il/result?mainSearchText=${query}`,
+    url: (query) =>
+      `https://www.findabook.co.il/result?mainSearchText=${query}`,
   },
   sipur_hozer: {
     mode: "automatic",
@@ -198,8 +199,7 @@ export function extractSourceOffers({ sourceId, title, body }) {
     const card = html.slice(start, end);
     const isOutOfStock =
       /\boutofstock\b/i.test(marker[0]) || /אזל\s+מהמלאי/i.test(card);
-    const isInStock =
-      /\binstock\b/i.test(marker[0]) || /במלאי/i.test(card);
+    const isInStock = /\binstock\b/i.test(marker[0]) || /במלאי/i.test(card);
     if (!isOutOfStock && !isInStock) continue;
     const titleLink = card.match(
       /<h3\b[^>]*wd-entities-title[^>]*>[\s\S]*?<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/i,
@@ -440,8 +440,7 @@ export function classifySearchResponse({
   return {
     status: "manual_required",
     resultCount: 0,
-    note:
-      "שם הספר הופיע, אך לא אומתו יחד מחיר, קישור ישיר למוצר ומצב מלאי.",
+    note: "שם הספר הופיע, אך לא אומתו יחד מחיר, קישור ישיר למוצר ומצב מלאי.",
   };
 }
 
@@ -758,8 +757,12 @@ export function extractBooknetOffer(html, title) {
 // which are common) is the meta price trusted.
 function steimatzkyMetaPrice(html) {
   const match =
-    html.match(/property=["'](?:og:)?product:price:amount["'][^>]*content=["']([\d.]+)["']/i) ||
-    html.match(/content=["']([\d.]+)["'][^>]*property=["'](?:og:)?product:price:amount["']/i);
+    html.match(
+      /property=["'](?:og:)?product:price:amount["'][^>]*content=["']([\d.]+)["']/i,
+    ) ||
+    html.match(
+      /content=["']([\d.]+)["'][^>]*property=["'](?:og:)?product:price:amount["']/i,
+    );
   if (!match) return null;
   const price = Number(match[1]);
   return Number.isFinite(price) && price > 0 ? price : null;
@@ -794,9 +797,7 @@ const STEIMATZKY_LINK_PATTERN =
 export function extractSteimatzkyProductLink(html, title) {
   const wantedTitle = normalizeSearchText(title);
   if (!wantedTitle) return null;
-  const matches = [
-    ...String(html || "").matchAll(STEIMATZKY_LINK_PATTERN),
-  ];
+  const matches = [...String(html || "").matchAll(STEIMATZKY_LINK_PATTERN)];
   for (const match of matches) {
     const linkText = textContent(match[2]);
     if (normalizeSearchText(linkText) === wantedTitle) {
@@ -889,4 +890,155 @@ export function extractFindabookShipping(html) {
     }
   }
   return null;
+}
+
+// Moved here from supabase/functions/alerts/index.ts (2026-08-19, simple-
+// scan build, SSOT fix) so both the existing alerts pipeline and the new
+// standalone rebooks-simple-scan function share exactly one implementation
+// instead of two copies that could silently drift apart. Behavior is
+// unchanged from the original (2026-08-15, approved): Rebooks/סיפור חוזר
+// search-result pages never carry shipping cost, only the individual
+// product page does - this performs exactly one extra fetch per
+// already-confirmed exact-match offer, and leaves the offer's shipping
+// unchanged (still unknown) if that fetch fails for any reason.
+export async function enrichRebooksShippingCosts(
+  sourceId,
+  offers,
+  { fetchImpl = fetch, timeoutMs = 6_000 } = {},
+) {
+  if (!["rebooks", "sipur_hozer"].includes(sourceId) || !offers?.length) {
+    return offers;
+  }
+  const enriched = [];
+  for (const offer of offers) {
+    try {
+      const productResponse = await fetchImpl(offer.sourceUrl, {
+        method: "GET",
+        redirect: "follow",
+        headers: {
+          accept:
+            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.7",
+          "accept-language": "he-IL,he;q=0.9,en-US;q=0.6,en;q=0.5",
+          "user-agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+        },
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      if (productResponse.ok) {
+        const productBody = await productResponse.text();
+        const shippingOptions = extractShippingOptions(productBody);
+        const availableBranches = extractAvailableBranches(productBody);
+        const best = bestKnownShipping(shippingOptions, availableBranches);
+        if (best) {
+          enriched.push({
+            ...offer,
+            shippingKnown: true,
+            shippingPrice: best.price,
+          });
+          continue;
+        }
+      }
+    } catch {
+      // Product page unreachable - fall through and keep shipping unknown.
+    }
+    enriched.push(offer);
+  }
+  return enriched;
+}
+
+// Simple per-book Rebooks scan (2026-08-19, per user's explicit "מנוע
+// חיפוש פשוט" spec, section 5). Deliberately does NOT touch
+// report_checks/report_runs - one book in, one verified-or-nothing result
+// out. sourceId is fixed to "rebooks" since this is scoped to Rebooks only
+// for now (section 4: Rebooks first, other sources added later one at a
+// time through the same pattern).
+export async function scanBookOnRebooks(
+  book,
+  { fetchImpl = fetch, timeoutMs = 6_000 } = {},
+) {
+  const plan = sourcePlan("rebooks", book);
+  if (!plan.searchUrl) {
+    return { status: "unavailable", note: plan.note || null, offers: [] };
+  }
+  let response;
+  try {
+    response = await fetchImpl(plan.searchUrl, {
+      method: "GET",
+      redirect: "follow",
+      headers: {
+        accept:
+          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.7",
+        "accept-language": "he-IL,he;q=0.9,en-US;q=0.6,en;q=0.5",
+        "user-agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+      },
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (error) {
+    return {
+      status: "temporary_error",
+      note: `שגיאת רשת בפנייה למקור: ${String(error?.message || error)}`,
+      offers: [],
+    };
+  }
+  const body = await response.text().catch(() => "");
+  const classified = classifySearchResponse({
+    sourceId: "rebooks",
+    title: book.title,
+    status: response.status,
+    contentType: response.headers.get("content-type") || "",
+    body,
+  });
+  if (classified.status !== "found" || !classified.offers?.length) {
+    return { status: classified.status, note: classified.note, offers: [] };
+  }
+  // KNOWN GAP (2026-08-19): section 5 requires an author cross-check when
+  // the author is known, but extractSourceOffers() only captures the
+  // title-link text from each product card, not an author field - there
+  // is nothing here to check the author against yet. Rather than fake a
+  // check that silently passes everything (which would be worse than no
+  // check at all), this is left as a real limitation to flag for approval
+  // separately: either extend extractSourceOffers to also capture the
+  // card's author text (needs a real Rebooks product-card HTML sample to
+  // write a correct pattern against), or accept title-only matching for
+  // Rebooks specifically since its exact-title equality check already
+  // rejects same-author-different-book and similar-title mismatches.
+  const enriched = await enrichRebooksShippingCosts(
+    "rebooks",
+    classified.offers,
+    {
+      fetchImpl,
+      timeoutMs,
+    },
+  );
+  return { status: "found", note: classified.note, offers: enriched };
+}
+
+// Builds the exact price_offers row for one verified offer. total_price is
+// intentionally NEVER set here - it is a DB-generated column
+// (item_price + shipping_price, or NULL when shipping_known is false) so
+// it can never be faked the way the "מי הזיז את הגבינה שלי" bug did
+// (shipping_price: 0 to force a total under 30 ₪ without an approved
+// pickup branch).
+export function buildPriceOfferPayload(book, offer, now = new Date()) {
+  return {
+    user_id: book.user_id,
+    book_id: book.id,
+    source: offer.source,
+    source_listing_key: offer.sourceListingKey,
+    listing_title: offer.listingTitle,
+    source_url: offer.sourceUrl,
+    condition: offer.condition,
+    match_type: offer.matchType,
+    edition_language: offer.editionLanguage,
+    item_price: offer.itemPrice,
+    availability_status: offer.availabilityStatus,
+    shipping_price: offer.shippingKnown ? offer.shippingPrice : null,
+    shipping_known: Boolean(offer.shippingKnown),
+    active: offer.availabilityStatus === "במלאי",
+    is_removed: false,
+    last_checked_at: now.toISOString(),
+    next_check_at: new Date(now.getTime() + 2 * 86400000).toISOString(),
+    updated_at: now.toISOString(),
+  };
 }
