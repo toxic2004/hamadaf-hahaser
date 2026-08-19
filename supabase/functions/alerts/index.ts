@@ -18,6 +18,7 @@ import {
 import {
   bestKnownShipping,
   classifySearchResponse,
+  enrichRebooksShippingCosts,
   evritShipping,
   extractAvailableBranches,
   extractEvritProductDetails,
@@ -335,53 +336,10 @@ async function mapWithConcurrency<T, R>(
 
 // Real-shipping-cost fix (2026-08-15, approved): Rebooks/סיפור חוזר search
 // result pages never carry shipping cost, only the individual product page
-// does. This performs exactly one extra fetch, only for an offer that has
-// already been confirmed as an exact title match on the search page - not
-// for every search result, matching what was agreed. If the product page
-// fetch fails for any reason, the offer is returned unchanged (shipping
-// stays unknown, same safe behavior as before this fix existed).
-async function enrichRebooksShippingCosts(
-  sourceId: string,
-  offers: Array<Record<string, any>>,
-) {
-  if (!["rebooks", "sipur_hozer"].includes(sourceId) || !offers?.length) {
-    return offers;
-  }
-  const enriched: Array<Record<string, any>> = [];
-  for (const offer of offers) {
-    try {
-      const productResponse = await fetch(offer.sourceUrl, {
-        method: "GET",
-        redirect: "follow",
-        headers: {
-          accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.7",
-          "accept-language": "he-IL,he;q=0.9,en-US;q=0.6,en;q=0.5",
-          "user-agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-        },
-        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-      });
-      if (productResponse.ok) {
-        const productBody = await productResponse.text();
-        const shippingOptions = extractShippingOptions(productBody);
-        const availableBranches = extractAvailableBranches(productBody);
-        const best = bestKnownShipping(shippingOptions, availableBranches);
-        if (best) {
-          enriched.push({
-            ...offer,
-            shippingKnown: true,
-            shippingPrice: best.price,
-          });
-          continue;
-        }
-      }
-    } catch {
-      // Product page unreachable - fall through and keep shipping unknown.
-    }
-    enriched.push(offer);
-  }
-  return enriched;
-}
+// does. Moved into scanner-core.mjs (2026-08-19, SSOT fix) so the new
+// standalone rebooks-simple-scan function reuses this exact implementation
+// instead of a second copy - imported above, called the same way it always
+// was, with this file's FETCH_TIMEOUT_MS passed through explicitly.
 
 // Findabook enrichment (2026-08-17, approved). Same second-fetch pattern
 // as Rebooks (item price already known from the search-results card,
@@ -404,7 +362,8 @@ async function enrichFindabookOffers(
         method: "GET",
         redirect: "follow",
         headers: {
-          accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.7",
+          accept:
+            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.7",
           "accept-language": "he-IL,he;q=0.9,en-US;q=0.6,en;q=0.5",
           "user-agent":
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
@@ -430,7 +389,6 @@ async function enrichFindabookOffers(
   }
   return enriched;
 }
-
 
 // search page already gives a complete offer and only shipping needs a
 // second fetch), Evrit's search page only confirms a matching product
@@ -467,7 +425,8 @@ async function enrichEvritOffers(
         method: "GET",
         redirect: "follow",
         headers: {
-          accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.7",
+          accept:
+            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.7",
           "accept-language": "he-IL,he;q=0.9,en-US;q=0.6,en;q=0.5",
           "user-agent":
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
@@ -513,13 +472,17 @@ async function enrichSteimatzkyOffers(
   if (sourceId !== "steimatzky" || !offers?.length) return offers;
   const enriched: Array<Record<string, any>> = [];
   for (const offer of offers) {
-    const resolvedUrl = resolveUrl("https://www.steimatzky.co.il", offer.sourceUrl);
+    const resolvedUrl = resolveUrl(
+      "https://www.steimatzky.co.il",
+      offer.sourceUrl,
+    );
     try {
       const productResponse = await fetch(resolvedUrl, {
         method: "GET",
         redirect: "follow",
         headers: {
-          accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.7",
+          accept:
+            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.7",
           "accept-language": "he-IL,he;q=0.9,en-US;q=0.6,en;q=0.5",
           "user-agent":
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
@@ -635,7 +598,6 @@ async function scanCheck(
       classified.offers = await enrichEvritOffers(
         check.source_id,
         classified.offers,
-
       );
       classified.offers = await enrichSteimatzkyOffers(
         check.source_id,
@@ -1168,7 +1130,10 @@ async function finalizeScheduledRun(
     // DD.MM.YYYY" format - the previous title here ("דוח X של המדף החסר")
     // was the same mismatch already confirmed in a real sent email during
     // the 2026-08-14 audit.
-    const subject = reportSubject(reportRunDetails.report_kind, reportRunDetails.local_date);
+    const subject = reportSubject(
+      reportRunDetails.report_kind,
+      reportRunDetails.local_date,
+    );
     const noOfferReport = await insertNotification({
       user_id: userId,
       notification_type: reportLabel,
