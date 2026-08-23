@@ -490,7 +490,7 @@ button,
 .overlay {
   position: fixed;
   inset: 0;
-  background: rgba(17, 35, 29, 0.52);
+  background: rgba(34, 40, 59, 0.55);
   display: none;
   align-items: flex-end;
   justify-content: center;
@@ -519,13 +519,14 @@ button,
 }
 .head h2 {
   margin: 0;
+  font-family: "Rubik", sans-serif;
 }
 .close {
   width: 44px;
   height: 44px;
   border-radius: 50%;
   padding: 0;
-  background: #eee9df;
+  background: var(--paper);
 }
 .field {
   margin: 13px 0;
@@ -541,8 +542,8 @@ button,
 .field select {
   width: 100%;
   border: 1px solid var(--line);
-  background: white;
-  border-radius: 12px;
+  background: var(--card);
+  border-radius: 13px;
   padding: 12px;
   outline: none;
 }
@@ -596,8 +597,10 @@ button,
   grid-template-columns: 46px 1fr;
   gap: 9px;
   align-items: center;
-  background: white;
+  background: var(--card);
   border: 1px solid var(--line);
+  border-radius: 13px;
+  padding: 8px;
   text-align: right;
 }
 .result img {
@@ -610,7 +613,7 @@ button,
   height: 145px;
   object-fit: contain;
   border-radius: 10px;
-  background: #eee;
+  background: var(--paper);
 }
 .toast {
   position: fixed;
