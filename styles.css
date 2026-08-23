@@ -313,6 +313,7 @@ button,
 .badge {
   display: block;
   order: 3;
+  flex: 0 0 100%;
   width: 100%;
   margin-top: 10px;
   padding-top: 10px;
