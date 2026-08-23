@@ -410,7 +410,9 @@ function card(b) {
         ? "got"
         : b.status === "סל מחזור"
           ? "trash"
-          : "";
+          : b.status === "מחכה לתשובה"
+            ? "waiting"
+            : "";
   const c = b.cover
     ? '<img src="' + esc(b.cover) + '">'
     : '<div class="fallback">' + esc(b.title) + "</div>";

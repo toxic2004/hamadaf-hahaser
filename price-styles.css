@@ -61,11 +61,11 @@
   height: 160px;
   object-fit: contain;
   border-radius: 12px;
-  background: #f4f1ea;
+  background: var(--paper);
 }
 .offer.best {
-  border-color: #c7903b;
-  box-shadow: 0 0 0 2px rgba(199, 144, 59, 0.12);
+  border-color: var(--gold);
+  box-shadow: 0 0 0 2px rgba(255, 201, 77, 0.25);
 }
 .offer h3 {
   margin-bottom: 8px;
@@ -90,12 +90,12 @@
   display: inline-block;
   border-radius: 99px;
   padding: 5px 9px;
-  background: #f3eee5;
+  background: var(--paper);
   font-weight: 700;
 }
 .dealScore.good {
-  background: #e2f0df;
-  color: #3f7037;
+  background: #dbf5f0;
+  color: #0d8a78;
 }
 .tabsTitle {
   margin-top: 22px;

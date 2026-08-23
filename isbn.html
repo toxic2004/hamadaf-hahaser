@@ -6,19 +6,27 @@
       name="viewport"
       content="width=device-width,initial-scale=1,viewport-fit=cover"
     />
-    <meta name="theme-color" content="#285f50" />
+    <meta name="theme-color" content="#ff5c7a" />
     <title>הוספת ספר חכמה | המדף החסר</title>
+    <link rel="icon" type="image/svg+xml" href="./assets/logo-hamadaf.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;700;800;900&family=Assistant:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
     <style>
       :root {
-        --ink: #17352d;
-        --muted: #6d7f79;
-        --paper: #f5f1e8;
-        --card: #fffdf8;
-        --green: #285f50;
-        --green2: #dcebe4;
-        --danger: #a94a45;
-        --line: #e4ded2;
-        --shadow: 0 12px 35px rgba(33, 58, 48, 0.11);
+        --ink: #22283b;
+        --muted: #7a7f94;
+        --paper: #fff7e0;
+        --card: #ffffff;
+        --green: #ff5c7a;
+        --green2: #ffe3ea;
+        --gold: #ffc94d;
+        --danger: #e14f63;
+        --line: #f0e6c8;
+        --shadow: 0 12px 30px rgba(34, 40, 59, 0.12);
       }
       * {
         box-sizing: border-box;
@@ -27,10 +35,15 @@
         margin: 0;
         background: var(--paper);
         color: var(--ink);
-        font-family: Arial, sans-serif;
+        font-family: "Assistant", Arial, sans-serif;
         min-height: 100vh;
         min-height: 100dvh;
         overflow-x: hidden;
+      }
+      h1,
+      h2,
+      h3 {
+        font-family: "Rubik", "Assistant", Arial, sans-serif;
       }
       .shell {
         max-width: 700px;
@@ -55,14 +68,10 @@
       }
       .logo {
         width: 48px;
-        height: 48px;
-        border-radius: 15px;
-        background: var(--green);
-        color: white;
-        display: grid;
-        place-items: center;
-        font-size: 25px;
+        height: 41px;
+        object-fit: contain;
         flex: 0 0 auto;
+        display: block;
       }
       .card {
         background: var(--card);
@@ -254,7 +263,11 @@
     <main class="shell">
       <header class="top">
         <div class="brand">
-          <div class="logo">▥</div>
+          <img
+            class="logo"
+            src="./assets/logo-hamadaf.svg"
+            alt="לוגו המדף החסר"
+          />
           <div>
             <h1>הוספת ספר חכמה</h1>
             <div class="sub">איתור לפי ISBN או לפי צילום כריכה</div>
