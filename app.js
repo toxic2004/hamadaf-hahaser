@@ -413,9 +413,14 @@ function card(b) {
           : b.status === "מחכה לתשובה"
             ? "waiting"
             : "";
+  const initials = (b.title || "").trim().split(/\s+/)[0].slice(0, 6);
   const c = b.cover
     ? '<img src="' + esc(b.cover) + '">'
-    : '<div class="fallback">' + esc(b.title) + "</div>";
+    : '<div class="fallback" title="' +
+      esc(b.title) +
+      '">' +
+      esc(initials) +
+      "</div>";
   const priorityClass =
     b.priority === "דחופה"
       ? " priority-urgent"
