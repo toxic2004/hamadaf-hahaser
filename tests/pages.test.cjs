@@ -28,7 +28,7 @@ test("mobile layout protects iPhone safe areas and narrow screens", () => {
     assert.match(source, /safe-area-inset-bottom/);
     assert.match(source, /100dvh/);
   }
-  assert.match(styles, /\.tools \.search\s*{[^}]*grid-column:\s*1 \/ -1/s);
+  assert.match(styles, /\.tools \.search\s*{[^}]*flex:\s*1 1 100%/s);
   assert.match(styles, /@media \(max-width: 350px\)/);
   assert.match(dashboard, /overflow-x:\s*hidden/);
 });
