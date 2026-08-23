@@ -311,31 +311,29 @@ button,
   min-height: 18px;
 }
 .badge {
-  display: inline-block;
+  display: block;
   order: 3;
-  margin-top: 4px;
-  background: var(--green2);
-  color: var(--green);
-  border-radius: 99px;
-  padding: 5px 10px;
+  flex: 0 0 100%;
+  width: 100%;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--line);
+  background: none;
+  color: var(--muted);
   font-size: 11.5px;
   font-family: "Rubik", sans-serif;
   font-weight: 700;
 }
 .badge.discuss {
-  background: #fff3d1;
   color: #a5720c;
 }
 .badge.waiting {
-  background: #ece7fb;
   color: #5b45c9;
 }
 .badge.got {
-  background: #dbf5f0;
   color: #0d8a78;
 }
 .badge.trash {
-  background: #eceef3;
   color: #6b7086;
 }
 .list {
@@ -362,8 +360,27 @@ button,
   padding: 6px;
 }
 .list .badge {
+  display: inline-block;
+  width: auto;
   margin: 0 10px;
+  padding: 4px 9px;
+  border-top: none;
+  border-radius: 99px;
+  background: var(--green2);
+  color: var(--green);
   order: 0;
+}
+.list .badge.discuss {
+  background: #fff3d1;
+}
+.list .badge.waiting {
+  background: #ece7fb;
+}
+.list .badge.got {
+  background: #dbf5f0;
+}
+.list .badge.trash {
+  background: #eceef3;
 }
 .empty {
   background: var(--card);
@@ -411,27 +428,37 @@ button,
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   background: transparent;
   color: var(--muted);
   padding: 12px 6px 10px;
   font-size: 12px;
-  min-height: 62px;
+  font-weight: 600;
+  min-height: 78px;
+  opacity: 0.75;
+  transition:
+    opacity 0.15s,
+    transform 0.1s;
+}
+.nav:active {
+  transform: scale(0.96);
 }
 .nav span {
   display: block;
-  font-size: 20px;
-}
-.nav::after {
-  content: "";
-  width: 24px;
-  height: 4px;
-  border-radius: 4px;
+  width: 15px;
+  height: 46px;
+  border-radius: 6px;
+  font-size: 0;
   background: var(--dot, var(--line));
-  opacity: 0.4;
+  transition: height 0.15s;
 }
-.nav.active::after {
+.nav.active {
   opacity: 1;
+  color: var(--ink);
+  font-weight: 800;
+}
+.nav.active span {
+  height: 56px;
 }
 .nav[data-status="מחפש"] {
   --dot: var(--green);
@@ -442,18 +469,15 @@ button,
 .nav[data-status="מחכה לתשובה"] {
   --dot: var(--violet);
 }
-.nav[data-status="מועדפים"] {
-  --dot: var(--gold);
+.nav[data-status="מועדפים"] span {
+  background: transparent;
+  border: 2.5px solid var(--gold);
 }
 .nav[data-status="השגתי"] {
   --dot: var(--teal);
 }
 .nav[data-status="סל מחזור"] {
   --dot: var(--muted);
-}
-.nav.active {
-  color: var(--ink);
-  font-weight: 800;
 }
 .overlay {
   position: fixed;
