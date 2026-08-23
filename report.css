@@ -1,13 +1,13 @@
 :root {
-  --report-green: #173f35;
-  --report-green-soft: #e2eee8;
-  --report-gold: #b7822f;
-  --report-gold-soft: #fbf1dc;
-  --report-paper: #f3efe5;
-  --report-white: #fffdf8;
-  --report-ink: #16352d;
-  --report-muted: #64766f;
-  --report-line: #ded7c9;
+  --report-green: #ff5c7a;
+  --report-green-soft: #ffe3ea;
+  --report-gold: #ffc94d;
+  --report-gold-soft: #fff3d1;
+  --report-paper: #fff7e0;
+  --report-white: #ffffff;
+  --report-ink: #22283b;
+  --report-muted: #7a7f94;
+  --report-line: #f0e6c8;
 }
 
 body {
@@ -29,7 +29,7 @@ body {
 
 .reportHero {
   color: white;
-  background: linear-gradient(135deg, #12372f, #245f50);
+  background: linear-gradient(135deg, #ff5c7a, #8c7ae6);
   border-radius: 28px;
   padding: clamp(22px, 4vw, 42px);
   display: flex;
@@ -54,11 +54,11 @@ body {
 }
 
 .reportHero .eyebrow {
-  color: #f0c97f;
+  color: #ffe1a8;
 }
 
 .heroSub {
-  color: #dce9e4;
+  color: rgba(255, 255, 255, 0.88);
   margin: 12px 0 0;
 }
 
@@ -76,22 +76,22 @@ body {
 }
 
 .heroActions .primary {
-  background: #d2a654;
-  color: #17352d;
+  background: #ffffff;
+  color: var(--report-ink);
 }
 
 .coverageBanner {
   margin: 18px 0;
   padding: 16px 18px;
-  border: 1px solid #d4a954;
+  border: 1px solid var(--report-gold);
   border-radius: 16px;
   background: var(--report-gold-soft);
   line-height: 1.55;
 }
 
 .coverageBanner.complete {
-  border-color: #7da68f;
-  background: var(--report-green-soft);
+  border-color: #12b7a0;
+  background: #dbf5f0;
 }
 
 .reportMetrics {
@@ -140,8 +140,8 @@ body {
 }
 
 .dealBook.target {
-  border-color: #d4a954;
-  box-shadow: inset 5px 0 0 #d4a954;
+  border-color: var(--report-gold);
+  box-shadow: inset 5px 0 0 var(--report-gold);
 }
 
 .reportCover {
@@ -149,7 +149,7 @@ body {
   height: 132px;
   object-fit: contain;
   border-radius: 10px;
-  background: #ece7dc;
+  background: var(--report-paper);
 }
 
 .coverFallback {
@@ -194,7 +194,8 @@ body {
   gap: 10px;
   padding: 10px 12px;
   border-radius: 13px;
-  background: #f8f5ee;
+  background: var(--report-white);
+  border: 1px solid var(--report-line);
 }
 
 .ranking:first-child {
@@ -268,7 +269,7 @@ body {
   display: inline-block;
   padding: 5px 8px;
   border-radius: 99px;
-  background: #eee8dc;
+  background: var(--report-paper);
   font-size: 12px;
   font-weight: 800;
 }

@@ -1,13 +1,16 @@
 :root {
-  --ink: #17352d;
-  --muted: #6d7f79;
-  --paper: #f5f1e8;
-  --card: #fffdf8;
-  --green: #285f50;
-  --green2: #dcebe4;
-  --danger: #a94a45;
-  --line: #e4ded2;
-  --shadow: 0 12px 35px rgba(33, 58, 48, 0.11);
+  --ink: #22283b;
+  --muted: #7a7f94;
+  --paper: #fff7e0;
+  --card: #ffffff;
+  --green: #ff5c7a;
+  --green2: #ffe3ea;
+  --danger: #e14f63;
+  --line: #f0e6c8;
+  --teal: #12b7a0;
+  --gold: #ffc94d;
+  --violet: #8c7ae6;
+  --shadow: 0 12px 30px rgba(34, 40, 59, 0.12);
 }
 * {
   box-sizing: border-box;
@@ -22,9 +25,15 @@ body {
   margin: 0;
   background: var(--paper);
   color: var(--ink);
-  font-family: Arial, sans-serif;
+  font-family: "Assistant", Arial, sans-serif;
   min-height: 100vh;
   min-height: 100dvh;
+}
+h1,
+h2,
+h3,
+.metric strong {
+  font-family: "Rubik", "Assistant", Arial, sans-serif;
 }
 button,
 input,

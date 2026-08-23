@@ -1,14 +1,16 @@
 :root {
-  --ink: #17352d;
-  --muted: #6d7f79;
-  --paper: #f5f1e8;
-  --card: #fffdf8;
-  --green: #285f50;
-  --green2: #dcebe4;
-  --gold: #c7903b;
-  --danger: #a94a45;
-  --line: #e4ded2;
-  --shadow: 0 12px 35px rgba(33, 58, 48, 0.11);
+  --ink: #22283b;
+  --muted: #7a7f94;
+  --paper: #fff7e0;
+  --card: #ffffff;
+  --green: #ff5c7a; /* primary accent (coral) */
+  --green2: #ffe3ea; /* light tint of primary, used for count/active bg */
+  --gold: #ffc94d; /* favorites / fab accent (sun) */
+  --danger: #e14f63;
+  --line: #f0e6c8;
+  --teal: #12b7a0;
+  --violet: #8c7ae6;
+  --shadow: 0 12px 30px rgba(34, 40, 59, 0.12);
 }
 * {
   box-sizing: border-box;
@@ -25,11 +27,18 @@ body {
   margin: 0;
   background: var(--paper);
   color: var(--ink);
-  font-family: Arial, sans-serif;
+  font-family: "Assistant", Arial, sans-serif;
   min-height: 100vh;
   min-height: 100dvh;
   padding-bottom: calc(130px + env(safe-area-inset-bottom)) !important;
   touch-action: pan-y;
+}
+h1,
+.title,
+.count,
+.priorityBadge,
+.requiredBadge {
+  font-family: "Rubik", "Assistant", Arial, sans-serif;
 }
 button,
 input,
@@ -62,14 +71,9 @@ button {
 }
 .logo {
   width: 52px;
-  height: 52px;
-  border-radius: 16px;
-  background: var(--green);
-  color: #fff;
-  display: grid;
-  place-items: center;
-  font-size: 26px;
-  box-shadow: var(--shadow);
+  height: 45px;
+  display: block;
+  object-fit: contain;
 }
 h1 {
   margin: 0;
@@ -168,10 +172,10 @@ button,
   min-width: 0;
 }
 .book.priority-high {
-  border-color: #d9b66e;
+  border-color: var(--gold);
 }
 .book.priority-urgent {
-  border-color: #cf7c76;
+  border-color: var(--danger);
 }
 .bookMarkers {
   display: flex;
@@ -185,20 +189,20 @@ button,
   padding: 4px 8px;
   font-size: 11px;
   font-weight: 700;
-  background: #f3eee5;
+  background: var(--paper);
   color: var(--muted);
 }
 .priorityBadge.high {
-  background: #fff0d8;
-  color: #7c571c;
+  background: #fff3d1;
+  color: #a5720c;
 }
 .priorityBadge.urgent {
-  background: #fbe7e5;
-  color: var(--danger);
+  background: #ffe3e9;
+  color: #c7264a;
 }
 .requiredBadge {
-  background: #e8e1f5;
-  color: #5c477e;
+  background: #ece7fb;
+  color: #5b45c9;
 }
 .favoriteToggle {
   position: absolute;
@@ -272,16 +276,20 @@ button,
   font-weight: 700;
 }
 .badge.discuss {
-  background: #fff0d8;
-  color: #8b611c;
+  background: #fff3d1;
+  color: #a5720c;
+}
+.badge.waiting {
+  background: #ece7fb;
+  color: #5b45c9;
 }
 .badge.got {
-  background: #e2f0df;
-  color: #3f7037;
+  background: #dbf5f0;
+  color: #0d8a78;
 }
 .badge.trash {
-  background: #f3e7e5;
-  color: #8b4c48;
+  background: #eceef3;
+  color: #6b7086;
 }
 .list {
   display: flex;
@@ -359,14 +367,48 @@ button,
   padding: 10px 4px 8px;
   font-size: 12px;
   min-height: 62px;
+  position: relative;
 }
 .nav span {
   display: block;
   font-size: 21px;
   margin-bottom: 3px;
 }
+.nav::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 50%;
+  transform: translateX(50%);
+  width: 22px;
+  height: 4px;
+  border-radius: 0 0 4px 4px;
+  background: var(--dot, transparent);
+  opacity: 0.35;
+}
+.nav.active::before {
+  opacity: 1;
+}
+.nav[data-status="מחפש"] {
+  --dot: var(--green);
+}
+.nav[data-status="בדיונים"] {
+  --dot: var(--gold);
+}
+.nav[data-status="מחכה לתשובה"] {
+  --dot: var(--violet);
+}
+.nav[data-status="מועדפים"] {
+  --dot: var(--gold);
+}
+.nav[data-status="השגתי"] {
+  --dot: var(--teal);
+}
+.nav[data-status="סל מחזור"] {
+  --dot: var(--muted);
+}
 .nav.active {
-  color: var(--green);
+  color: var(--ink);
   font-weight: 800;
   background: linear-gradient(to top, var(--green2), transparent);
 }

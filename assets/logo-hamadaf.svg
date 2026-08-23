@@ -1,0 +1,9 @@
+<svg viewBox="0 0 140 120" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="לוגו המדף החסר">
+  <rect x="4" y="104" width="132" height="10" rx="5" fill="#22283B"/>
+  <rect x="10" y="40" width="16" height="64" rx="4" fill="#FF5C7A" transform="rotate(-3 18 72)"/>
+  <rect x="30" y="28" width="16" height="76" rx="4" fill="#FFC94D"/>
+  <rect x="50" y="50" width="16" height="54" rx="4" fill="none" stroke="#22283B" stroke-width="2.5" stroke-dasharray="4 5"/>
+  <rect x="70" y="34" width="16" height="70" rx="4" fill="#12B7A0" transform="rotate(2 78 69)"/>
+  <rect x="90" y="46" width="16" height="58" rx="4" fill="#8C7AE6"/>
+  <rect x="110" y="24" width="16" height="80" rx="4" fill="#FF5C7A" transform="rotate(-2 118 64)"/>
+</svg>
