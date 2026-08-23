@@ -352,6 +352,18 @@ export function classifySearchResponse({
             editionLanguage: "עברית",
             shippingKnown: Boolean(shipping),
             shippingPrice: shipping ? shipping.price : null,
+            shippingPickupPrice: shipping
+              ? shipping.allOptions.pickupPrice
+              : null,
+            shippingPickupApproved: shipping
+              ? shipping.allOptions.pickupApproved
+              : null,
+            shippingDistributionPrice: shipping
+              ? shipping.allOptions.distributionPrice
+              : null,
+            shippingCourierPrice: shipping
+              ? shipping.allOptions.courierPrice
+              : null,
           },
         ],
       };
@@ -585,9 +597,27 @@ export function bestKnownShipping(options, availableBranches = []) {
     candidates.push({ price: options.courier.price, method: "courier" });
   }
   if (!candidates.length) return null;
-  return candidates.reduce((best, candidate) =>
-    candidate.price < best.price ? candidate : best,
+  const best = candidates.reduce((left, right) =>
+    right.price < left.price ? right : left,
   );
+  // Additive only (2026-08-23, approved): the full breakdown of every
+  // known option, for informational display in the report alongside the
+  // single cheapest total. Does not change `best` (still exactly the same
+  // value used for shipping_price/total_price/ranking) or the null-return
+  // drop path above.
+  return {
+    ...best,
+    allOptions: {
+      pickupPrice: options?.pickup ? options.pickup.price : null,
+      pickupApproved: options?.pickup
+        ? availableBranches.some((branch) => isApprovedPickupBranch(branch))
+        : null,
+      distributionPrice: options?.distributionPoint
+        ? options.distributionPoint.price
+        : null,
+      courierPrice: options?.courier ? options.courier.price : null,
+    },
+  };
 }
 
 // Evrit (e-vrit.co.il) parser (2026-08-16, approved). Unlike Rebooks,
@@ -934,6 +964,10 @@ export async function enrichRebooksShippingCosts(
             ...offer,
             shippingKnown: true,
             shippingPrice: best.price,
+            shippingPickupPrice: best.allOptions.pickupPrice,
+            shippingPickupApproved: best.allOptions.pickupApproved,
+            shippingDistributionPrice: best.allOptions.distributionPrice,
+            shippingCourierPrice: best.allOptions.courierPrice,
           });
           continue;
         }
