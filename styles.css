@@ -292,6 +292,8 @@ button,
   font-weight: 800;
   font-size: 12px;
   line-height: 1.2;
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 .body {
   flex: 1;
