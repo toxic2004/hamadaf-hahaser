@@ -451,3 +451,11 @@ $("saveOffer").onclick = saveOffer;
 $("resetForm").onclick = resetForm;
 db.auth.getSession().then(({ data }) => showSession(data.session));
 db.auth.onAuthStateChange((event, session) => showSession(session));
+
+const AUTO_REFRESH_MS = 90000;
+setInterval(() => {
+  if (user && document.visibilityState === "visible") loadOffers();
+}, AUTO_REFRESH_MS);
+document.addEventListener("visibilitychange", () => {
+  if (user && document.visibilityState === "visible") loadOffers();
+});
