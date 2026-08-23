@@ -339,36 +339,59 @@ button,
 .list {
   display: flex;
   flex-direction: column;
-  gap: 9px;
+  gap: 6px;
 }
 .list .book {
   display: grid;
-  grid-template-columns: 70px minmax(0, 1fr) auto;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
   align-items: center;
-  padding: 8px;
+  gap: 10px;
+  padding: 6px 10px;
 }
 .list .cover {
-  width: auto;
-  height: 82px;
-  border-radius: 12px;
-}
-.list .body {
-  padding: 8px 13px 8px 30px;
+  width: 44px;
+  height: 44px;
+  border-radius: 9px;
 }
 .list .fallback {
-  font-size: 10px;
-  padding: 6px;
+  font-size: 9px;
+  padding: 3px;
+}
+.list .body {
+  padding: 0;
+  min-width: 0;
+}
+.list .title {
+  font-size: 13.5px;
+  margin-bottom: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.list .author {
+  font-size: 12px;
+  min-height: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.list .bookMarkers,
+.list .googleCover,
+.list .favoriteToggle {
+  display: none;
 }
 .list .badge {
   display: inline-block;
   width: auto;
-  margin: 0 10px;
+  margin: 0;
   padding: 4px 9px;
   border-top: none;
   border-radius: 99px;
   background: var(--green2);
   color: var(--green);
   order: 0;
+  font-size: 10.5px;
+  white-space: nowrap;
 }
 .list .badge.discuss {
   background: #fff3d1;
@@ -683,17 +706,6 @@ button,
     border-radius: 24px 24px 0 0;
     max-height: calc(100dvh - env(safe-area-inset-top));
     padding-bottom: max(22px, env(safe-area-inset-bottom));
-  }
-  .list .book {
-    grid-template-columns: 60px minmax(0, 1fr);
-  }
-  .list .badge {
-    grid-column: 2;
-    margin: 0 13px 8px;
-    width: max-content;
-  }
-  .list .cover {
-    height: 72px;
   }
 }
 @media (max-width: 350px) {
