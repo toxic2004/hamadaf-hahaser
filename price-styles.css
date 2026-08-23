@@ -8,9 +8,11 @@
   background: white;
   border: 1px solid var(--line);
   color: var(--ink);
-  border-radius: 12px;
-  padding: 9px 11px;
+  border-radius: 14px;
+  padding: 10px 12px;
   text-decoration: none;
+  box-shadow: var(--shadow);
+  font-weight: 600;
 }
 .formGrid {
   display: grid;
@@ -51,10 +53,25 @@
   margin-top: 12px;
 }
 .offer {
+  position: relative;
   background: white;
   border: 1px solid var(--line);
-  border-radius: 15px;
-  padding: 14px;
+  border-radius: 18px;
+  padding: 14px 18px 14px 14px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.offer::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 6px;
+  background: var(--teal);
+}
+.offer.best::before {
+  background: var(--gold);
 }
 .offerImage {
   width: 100%;
@@ -65,10 +82,13 @@
 }
 .offer.best {
   border-color: var(--gold);
-  box-shadow: 0 0 0 2px rgba(255, 201, 77, 0.25);
+  box-shadow:
+    0 0 0 2px rgba(255, 201, 77, 0.35),
+    var(--shadow);
 }
 .offer h3 {
   margin-bottom: 8px;
+  font-family: "Rubik", sans-serif;
 }
 .offer p {
   margin: 6px 0;
@@ -92,6 +112,7 @@
   padding: 5px 9px;
   background: var(--paper);
   font-weight: 700;
+  font-family: "Rubik", sans-serif;
 }
 .dealScore.good {
   background: #dbf5f0;
