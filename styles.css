@@ -405,6 +405,14 @@ button,
   font-size: 31px;
   box-shadow: var(--shadow);
   z-index: 8;
+  transition:
+    transform 0.25s ease,
+    opacity 0.25s ease;
+}
+.fab.fabHide {
+  transform: translateY(140%);
+  opacity: 0;
+  pointer-events: none;
 }
 .shelf {
   background: var(--card);
@@ -688,5 +696,10 @@ button,
 @media (max-width: 350px) {
   .count {
     padding-inline: 9px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fab {
+    transition: none;
   }
 }

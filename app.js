@@ -118,6 +118,7 @@ function bind() {
   };
   exportExcel.onclick = exportToExcel;
   add.onclick = openAdd;
+  bindFabScrollHide();
   document
     .querySelectorAll(".nav")
     .forEach((n) => (n.onclick = () => changePage(n)));
@@ -464,6 +465,31 @@ function card(b) {
     '">' +
     b.status +
     "</span></article>"
+  );
+}
+function bindFabScrollHide() {
+  let lastY = window.scrollY;
+  let ticking = false;
+  window.addEventListener(
+    "scroll",
+    () => {
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(() => {
+        const y = window.scrollY;
+        const goingDown = y > lastY + 4;
+        const goingUp = y < lastY - 4;
+        const nearTop = y < 80;
+        if (nearTop || goingUp) {
+          add.classList.remove("fabHide");
+        } else if (goingDown) {
+          add.classList.add("fabHide");
+        }
+        lastY = y;
+        ticking = false;
+      });
+    },
+    { passive: true },
   );
 }
 function changePage(n) {
