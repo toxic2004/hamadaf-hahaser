@@ -33,7 +33,10 @@ const REAL_PRODUCT_PAGE_HTML = `
 test("extractEvritProductLink finds the exact matching title and returns the product URL", async () => {
   const { extractEvritProductLink } = await scanner();
   const url = extractEvritProductLink(REAL_SEARCH_RESULT_HTML, "אנטי שביר");
-  assert.equal(url, "/Product/9199/%D7%90%D7%A0%D7%98%D7%99_%D7%A9%D7%91%D7%99%D7%A8");
+  assert.equal(
+    url,
+    "/Product/9199/%D7%90%D7%A0%D7%98%D7%99_%D7%A9%D7%91%D7%99%D7%A8",
+  );
 });
 
 test("extractEvritProductLink does not match a different book on the same page", async () => {
@@ -66,5 +69,13 @@ test("extractEvritProductDetails marks out of stock when an אזל marker sits n
 
 test("evritShipping always resolves to free self-pickup (fixed, always-approved warehouse in Rishon LeZion)", async () => {
   const { evritShipping } = await scanner();
-  assert.deepEqual(evritShipping(), { price: 0, method: "pickup" });
+  const shipping = evritShipping();
+  assert.equal(shipping.price, 0);
+  assert.equal(shipping.method, "pickup");
+  assert.deepEqual(shipping.allOptions, {
+    pickupPrice: 0,
+    pickupApproved: true,
+    distributionPrice: 15,
+    courierPrice: 29,
+  });
 });

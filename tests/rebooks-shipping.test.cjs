@@ -42,18 +42,37 @@ test("bestKnownShipping prefers distribution point over courier (nationwide, not
   const { extractShippingOptions, bestKnownShipping } = await scanner();
   const options = extractShippingOptions(REAL_SHIPPING_BLOCK_HTML);
   const best = bestKnownShipping(options);
-  assert.deepEqual(best, { price: 15, method: "distributionPoint" });
+  assert.equal(best.price, 15);
+  assert.equal(best.method, "distributionPoint");
+  assert.equal(best.allOptions.distributionPrice, 15);
 });
 
 test("bestKnownShipping falls back to courier when no distribution point price exists", async () => {
   const { bestKnownShipping } = await scanner();
-  const best = bestKnownShipping({ pickup: null, courier: { price: 39 }, distributionPoint: null });
-  assert.deepEqual(best, { price: 39, method: "courier" });
+  const best = bestKnownShipping({
+    pickup: null,
+    courier: { price: 39 },
+    distributionPoint: null,
+  });
+  assert.deepEqual(best, {
+    price: 39,
+    method: "courier",
+    allOptions: {
+      pickupPrice: null,
+      pickupApproved: null,
+      distributionPrice: null,
+      courierPrice: 39,
+    },
+  });
 });
 
 test("bestKnownShipping never uses self-pickup automatically (branch location not verified by this fix)", async () => {
   const { bestKnownShipping } = await scanner();
-  const best = bestKnownShipping({ pickup: { price: 0 }, courier: null, distributionPoint: null });
+  const best = bestKnownShipping({
+    pickup: { price: 0 },
+    courier: null,
+    distributionPoint: null,
+  });
   assert.equal(best, null);
 });
 
@@ -108,11 +127,17 @@ test("isApprovedPickupBranch matches every city confirmed with the user, and rej
     "נתניה",
   ];
   for (const city of approved) {
-    assert.ok(isApprovedPickupBranch(city), `expected "${city}" to be approved`);
+    assert.ok(
+      isApprovedPickupBranch(city),
+      `expected "${city}" to be approved`,
+    );
   }
   const rejected = ["חדרה", "יבנה", "חיפה", "אשדוד", "באר שבע", "עכו", "נשר"];
   for (const city of rejected) {
-    assert.ok(!isApprovedPickupBranch(city), `expected "${city}" to be rejected`);
+    assert.ok(
+      !isApprovedPickupBranch(city),
+      `expected "${city}" to be rejected`,
+    );
   }
 });
 
@@ -120,12 +145,16 @@ test("bestKnownShipping picks free pickup over paid options when an approved bra
   const { extractShippingOptions, bestKnownShipping } = await scanner();
   const options = extractShippingOptions(REAL_SHIPPING_BLOCK_HTML);
   const best = bestKnownShipping(options, ["סניף פתח תקווה"]);
-  assert.deepEqual(best, { price: 0, method: "pickup" });
+  assert.equal(best.price, 0);
+  assert.equal(best.method, "pickup");
+  assert.equal(best.allOptions.pickupApproved, true);
 });
 
 test("bestKnownShipping ignores pickup when only non-approved branches carry the book, falling back to distribution point", async () => {
   const { extractShippingOptions, bestKnownShipping } = await scanner();
   const options = extractShippingOptions(REAL_SHIPPING_BLOCK_HTML);
   const best = bestKnownShipping(options, ["סניף חדרה", "סניף יבנה"]);
-  assert.deepEqual(best, { price: 15, method: "distributionPoint" });
+  assert.equal(best.price, 15);
+  assert.equal(best.method, "distributionPoint");
+  assert.equal(best.allOptions.pickupApproved, false);
 });

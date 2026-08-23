@@ -53,7 +53,15 @@ test("extractBooknetOffer marks out of stock when there is no הוסף לסל co
 
 test("booknetShipping always resolves to free self-pickup (fixed, always-approved location in Ramla)", async () => {
   const { booknetShipping } = await scanner();
-  assert.deepEqual(booknetShipping(), { price: 0, method: "pickup" });
+  const shipping = booknetShipping();
+  assert.equal(shipping.price, 0);
+  assert.equal(shipping.method, "pickup");
+  assert.deepEqual(shipping.allOptions, {
+    pickupPrice: 0,
+    pickupApproved: true,
+    distributionPrice: 17,
+    courierPrice: 25,
+  });
 });
 
 // === Steimatzky ===
@@ -99,7 +107,10 @@ test("extractSteimatzkyOffer marks out of stock using the real חסר זמנית
 
 test("extractSteimatzkyOffer returns null when there is no price meta tag at all", async () => {
   const { extractSteimatzkyOffer } = await scanner();
-  assert.equal(extractSteimatzkyOffer("<html><body>no price here</body></html>"), null);
+  assert.equal(
+    extractSteimatzkyOffer("<html><body>no price here</body></html>"),
+    null,
+  );
 });
 
 test("extractSteimatzkyProductLink finds the real 9-digit product URL pattern", async () => {
@@ -111,5 +122,8 @@ test("extractSteimatzkyProductLink finds the real 9-digit product URL pattern", 
 
 test("steimatzkyShipping always resolves to the real cheapest published option (registered mail, 10 ₪)", async () => {
   const { steimatzkyShipping } = await scanner();
-  assert.deepEqual(steimatzkyShipping(), { price: 10, method: "registeredMail" });
+  assert.deepEqual(steimatzkyShipping(), {
+    price: 10,
+    method: "registeredMail",
+  });
 });

@@ -229,16 +229,13 @@ test("email content omits scanner and cover metrics", () => {
   assert.match(emailBuilder, /\.eq\("shipping_known", true\)/);
   assert.match(
     emailBuilder,
-    /item_price,total_price,shipping_known,source_url/,
+    /item_price,total_price,shipping_known,shipping_price,shipping_pickup_price,shipping_pickup_approved,shipping_distribution_price,shipping_courier_price,source_url/,
   );
   assert.match(emailBuilder, /\.not\("total_price", "is", null\)/);
   // Two-tier pricing fix (2026-08-16): the .lte("total_price",
   // MAX_REPORT_TOTAL) filter was removed from the SQL query entirely -
   // every valid offer is now fetched, and dealTier() classifies it.
-  assert.doesNotMatch(
-    emailBuilder,
-    /\.lte\("total_price", MAX_REPORT_TOTAL\)/,
-  );
+  assert.doesNotMatch(emailBuilder, /\.lte\("total_price", MAX_REPORT_TOTAL\)/);
   assert.match(emailBuilder, /dealTier/);
   assert.match(emailBuilder, /מחיר כולל משלוח/);
   assert.match(emailBuilder, /ירידת מחיר/);
@@ -250,7 +247,10 @@ test("email content omits scanner and cover metrics", () => {
   assert.match(emailBuilder, /background:#102a43/);
   assert.match(emailBuilder, /background:#2dd4bf/);
   assert.match(emailBuilder, /background:#ffffff/);
-  assert.match(emailBuilder, /style="display:block;background:\$\{buttonColor\}/);
+  assert.match(
+    emailBuilder,
+    /style="display:block;background:\$\{buttonColor\}/,
+  );
   assert.doesNotMatch(emailBuilder, /<style[\s>]/i);
   assert.doesNotMatch(emailBuilder, /class=/i);
   assert.doesNotMatch(emailBuilder, /<script[\s>]/i);
@@ -287,7 +287,9 @@ test("empty or incomplete reports never enter the Gmail queue", () => {
     source.indexOf("async function processSchedule"),
   );
   const qualityGate = finalizer.indexOf("reportQualityGate");
-  const reportInsert = finalizer.indexOf("const report = await insertNotification");
+  const reportInsert = finalizer.indexOf(
+    "const report = await insertNotification",
+  );
   assert.ok(qualityGate > 0);
   assert.ok(reportInsert > qualityGate);
   assert.match(finalizer, /if \(!emailHtml \|\| !reportQualityGate/);
@@ -343,7 +345,10 @@ test("email report change policy remains explicit and approval gated", () => {
   assert.match(policy, /דוח חלקי אינו\s+נשלח/);
   assert.match(policy, /דף חיפוש, דף קטלוג או כתובת\s+חיפוש כללית אינם הצעה/);
   assert.match(policy, /דוח ללא הצעה מלאה ואמינה אינו נשלח/);
-  assert.match(policy, /אין\s+להציג ספירת בדיקות, מקורות, ניסיונות, תוצאות, הצעות/);
+  assert.match(
+    policy,
+    /אין\s+להציג ספירת בדיקות, מקורות, ניסיונות, תוצאות, הצעות/,
+  );
 });
 
 test("deal notifications reject unsuitable offers", async () => {
@@ -608,7 +613,9 @@ test("bundled notification IDs are marked emailed_at once their parent report is
   // not before - the bundled rows have already been delivered as part of
   // the same email, so they should never be marked sent independently of
   // their parent actually going out.
-  const parentMarkIndex = deliverFn.indexOf('update({ emailed_at: new Date().toISOString() })');
+  const parentMarkIndex = deliverFn.indexOf(
+    "update({ emailed_at: new Date().toISOString() })",
+  );
   const bundledIndex = deliverFn.indexOf("bundledIds");
   assert.ok(parentMarkIndex >= 0 && bundledIndex >= 0);
   assert.ok(

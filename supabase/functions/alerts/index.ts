@@ -446,6 +446,10 @@ async function enrichEvritOffers(
             availabilityStatus: details.availabilityStatus,
             shippingKnown: true,
             shippingPrice: shipping.price,
+            shippingPickupPrice: shipping.allOptions.pickupPrice,
+            shippingPickupApproved: shipping.allOptions.pickupApproved,
+            shippingDistributionPrice: shipping.allOptions.distributionPrice,
+            shippingCourierPrice: shipping.allOptions.courierPrice,
           });
         }
         // details === null (no print price found) -> offer dropped, not
@@ -502,6 +506,10 @@ async function enrichSteimatzkyOffers(
             availabilityStatus: details.availabilityStatus,
             shippingKnown: true,
             shippingPrice: shipping.price,
+            shippingPickupPrice: shipping.allOptions.pickupPrice,
+            shippingPickupApproved: shipping.allOptions.pickupApproved,
+            shippingDistributionPrice: shipping.allOptions.distributionPrice,
+            shippingCourierPrice: shipping.allOptions.courierPrice,
           });
         }
         // details === null -> either an unreadable page or the
@@ -786,6 +794,10 @@ async function scanOldestRun(userId: string) {
         availability_status: offer.availabilityStatus,
         shipping_price: offer.shippingPrice,
         shipping_known: offer.shippingKnown,
+        shipping_pickup_price: offer.shippingPickupPrice ?? null,
+        shipping_pickup_approved: offer.shippingPickupApproved ?? null,
+        shipping_distribution_price: offer.shippingDistributionPrice ?? null,
+        shipping_courier_price: offer.shippingCourierPrice ?? null,
         active: true,
         is_removed: false,
         last_checked_at: now.toISOString(),
@@ -848,7 +860,7 @@ async function buildReportEmail(
     service()
       .from("price_offers")
       .select(
-        "book_id,source,listing_title,item_price,total_price,shipping_known,source_url,availability_status,last_checked_at",
+        "book_id,source,listing_title,item_price,total_price,shipping_known,shipping_price,shipping_pickup_price,shipping_pickup_approved,shipping_distribution_price,shipping_courier_price,source_url,availability_status,last_checked_at",
       )
       .eq("user_id", userId)
       .eq("active", true)
@@ -948,6 +960,50 @@ async function buildReportEmail(
     .filter((offer) => dealTier(Number(offer.total_price)) === "new")
     .slice(0, 10);
 
+  function formatShippingAmount(value: number) {
+    return value === 0 ? "חינם" : `${value.toFixed(2)} ₪`;
+  }
+
+  // Renders only the shipping methods actually known for this offer - per
+  // the user's rule (2026-08-23, approved), never invents or estimates a
+  // missing option. Purely informational: does not affect total_price,
+  // ranking, or which offers appear at all.
+  function shippingOptionsList(offer: Record<string, any>) {
+    const rows: string[] = [];
+    if (
+      offer.shipping_pickup_price !== null &&
+      offer.shipping_pickup_price !== undefined
+    ) {
+      const approvedNote =
+        offer.shipping_pickup_approved === true
+          ? " (מאושר לאזור שלך)"
+          : offer.shipping_pickup_approved === false
+            ? " (סניף לא מאושר לאזור שלך)"
+            : "";
+      rows.push(
+        `איסוף עצמי: ${formatShippingAmount(Number(offer.shipping_pickup_price))}${approvedNote}`,
+      );
+    }
+    if (
+      offer.shipping_distribution_price !== null &&
+      offer.shipping_distribution_price !== undefined
+    ) {
+      rows.push(
+        `נקודת חלוקה: ${formatShippingAmount(Number(offer.shipping_distribution_price))}`,
+      );
+    }
+    if (
+      offer.shipping_courier_price !== null &&
+      offer.shipping_courier_price !== undefined
+    ) {
+      rows.push(
+        `שליח עד הבית: ${formatShippingAmount(Number(offer.shipping_courier_price))}`,
+      );
+    }
+    if (!rows.length) return "";
+    return `<div style="margin:0 0 16px 0;padding:10px 12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;text-align:right;direction:rtl;"><div style="font-family:Arial,sans-serif;font-size:11px;font-weight:800;color:#64748b;margin:0 0 6px 0;">כל אפשרויות המשלוח הידועות</div>${rows.map((row) => `<div style="font-family:Arial,sans-serif;font-size:13px;color:#334155;line-height:1.6;">${escapeHtml(row)}</div>`).join("")}</div>`;
+  }
+
   function offerCard(offer: Record<string, any>, tier: "used" | "new") {
     const book = bookById.get(offer.book_id) || {};
     const price = Number(offer.total_price).toFixed(2);
@@ -972,7 +1028,7 @@ async function buildReportEmail(
         ? `<div style="display:inline-block;background:#fef3c7;color:#92400e;border:1px solid #fde68a;border-radius:999px;padding:6px 11px;font-family:Arial,sans-serif;font-size:12px;line-height:1;font-weight:800;margin:0 0 12px 0;">מידע בלבד - לא הצעת יד שנייה</div><br>`
         : "";
     const buttonColor = tier === "used" ? "#0f766e" : "#92400e";
-    return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:separate;background:#ffffff;border:1px solid #d8e4ee;border-radius:18px;margin:0 0 14px 0;box-shadow:0 8px 24px rgba(15,35,58,0.08);"><tr><td style="height:5px;background:${accentColor};border-radius:18px 18px 0 0;font-size:0;line-height:0;">&nbsp;</td></tr><tr><td style="padding:22px 22px 20px 22px;text-align:right;direction:rtl;">${tierBadge}<div style="font-family:Arial,sans-serif;font-size:21px;line-height:1.35;font-weight:800;color:#102a43;margin:0 0 4px 0;">${escapeHtml(book.title)}</div><div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5;color:#62758a;margin:0 0 5px 0;">${escapeHtml(book.author || "המחבר לא צוין")}</div><div style="font-family:Arial,sans-serif;font-size:13px;line-height:1.5;color:#0f766e;font-weight:700;margin:0 0 16px 0;">${escapeHtml(offer.source)} | ${changeLabel}</div><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:separate;background:${priceBoxBg};border:1px solid ${priceBoxBorder};border-radius:13px;margin:0 0 14px 0;"><tr><td style="padding:14px 16px;text-align:right;direction:rtl;"><div style="font-family:Arial,sans-serif;font-size:12px;line-height:1.4;font-weight:700;color:${priceLabelColor};margin:0 0 2px 0;">${priceLabel}</div><div style="font-family:Arial,sans-serif;font-size:31px;line-height:1.15;font-weight:900;color:#0f172a;letter-spacing:-0.5px;">${price} ₪</div></td></tr></table><div style="display:inline-block;${availabilityStyle}border-radius:999px;padding:7px 12px;font-family:Arial,sans-serif;font-size:13px;line-height:1;font-weight:800;margin:0 0 16px 0;">${escapeHtml(offer.availability_status)}</div><a href="${escapeHtml(offer.source_url)}" style="display:block;background:${buttonColor};color:#ffffff;text-decoration:none;text-align:center;border-radius:11px;padding:13px 18px;font-family:Arial,sans-serif;font-size:15px;line-height:1.3;font-weight:800;">לצפייה במוצר</a></td></tr></table>`;
+    return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:separate;background:#ffffff;border:1px solid #d8e4ee;border-radius:18px;margin:0 0 14px 0;box-shadow:0 8px 24px rgba(15,35,58,0.08);"><tr><td style="height:5px;background:${accentColor};border-radius:18px 18px 0 0;font-size:0;line-height:0;">&nbsp;</td></tr><tr><td style="padding:22px 22px 20px 22px;text-align:right;direction:rtl;">${tierBadge}<div style="font-family:Arial,sans-serif;font-size:21px;line-height:1.35;font-weight:800;color:#102a43;margin:0 0 4px 0;">${escapeHtml(book.title)}</div><div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5;color:#62758a;margin:0 0 5px 0;">${escapeHtml(book.author || "המחבר לא צוין")}</div><div style="font-family:Arial,sans-serif;font-size:13px;line-height:1.5;color:#0f766e;font-weight:700;margin:0 0 16px 0;">${escapeHtml(offer.source)} | ${changeLabel}</div><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:separate;background:${priceBoxBg};border:1px solid ${priceBoxBorder};border-radius:13px;margin:0 0 14px 0;"><tr><td style="padding:14px 16px;text-align:right;direction:rtl;"><div style="font-family:Arial,sans-serif;font-size:12px;line-height:1.4;font-weight:700;color:${priceLabelColor};margin:0 0 2px 0;">${priceLabel}</div><div style="font-family:Arial,sans-serif;font-size:31px;line-height:1.15;font-weight:900;color:#0f172a;letter-spacing:-0.5px;">${price} ₪</div></td></tr></table><div style="display:inline-block;${availabilityStyle}border-radius:999px;padding:7px 12px;font-family:Arial,sans-serif;font-size:13px;line-height:1;font-weight:800;margin:0 0 16px 0;">${escapeHtml(offer.availability_status)}</div>${shippingOptionsList(offer)}<a href="${escapeHtml(offer.source_url)}" style="display:block;background:${buttonColor};color:#ffffff;text-decoration:none;text-align:center;border-radius:11px;padding:13px 18px;font-family:Arial,sans-serif;font-size:15px;line-height:1.3;font-weight:800;">לצפייה במוצר</a></td></tr></table>`;
   }
 
   function sectionHeader(title: string, subtitle: string) {
