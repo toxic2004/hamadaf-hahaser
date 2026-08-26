@@ -180,6 +180,99 @@ test("scanBookOnRebooks: network failure returns temporary_error, never invents 
   assert.deepEqual(result.offers, []);
 });
 
+test("scanBookOnRebooks: rejects an offer when the product page's real author doesn't match the expected author", async () => {
+  const { scanBookOnRebooks } = await scanner();
+  const title = "כותר משותף במקרה";
+  // Real Rebooks product-page structure (confirmed 2026-08-19): author is
+  // a link to /book-author/<slug>/ right under the title.
+  const productHtml = `
+    <h1>${title}</h1>
+    <p>מאת</p>
+    <a href="https://rebooks.org.il/book-author/mishehu-acher/">מישהו אחר</a>
+    <div class="shipping-options">
+      <h4><strong>נקודת חלוקה – 15 ש״ח</strong></h4>
+    </div>
+  `;
+  const fetchImpl = fakeFetch([
+    {
+      test: (u) => u.includes("rebooks.org.il/?s="),
+      status: 200,
+      body: searchPageHtml({ title }),
+    },
+    {
+      test: (u) => u.includes("/product/x-12345/"),
+      status: 200,
+      body: productHtml,
+    },
+  ]);
+  const result = await scanBookOnRebooks(
+    { title, author: "טמזין מארי" },
+    { fetchImpl },
+  );
+  // Title matched, but the real author on the page is someone else -
+  // must not be treated as a verified offer for this book.
+  assert.equal(result.offers.length, 0);
+});
+
+test("scanBookOnRebooks: keeps an offer when the product page's author matches the expected author", async () => {
+  const { scanBookOnRebooks } = await scanner();
+  const title = "הוראות ללב יד שנייה";
+  const productHtml = `
+    <h1>${title}</h1>
+    <p>מאת</p>
+    <a href="https://rebooks.org.il/book-author/%d7%98%d7%9e%d7%96%d7%99%d7%9f-%d7%9e%d7%90%d7%a8%d7%99/">טמזין מארי</a>
+    <div class="shipping-options">
+      <h4><strong>נקודת חלוקה – 15 ש״ח</strong></h4>
+    </div>
+  `;
+  const fetchImpl = fakeFetch([
+    {
+      test: (u) => u.includes("rebooks.org.il/?s="),
+      status: 200,
+      body: searchPageHtml({ title }),
+    },
+    {
+      test: (u) => u.includes("/product/x-12345/"),
+      status: 200,
+      body: productHtml,
+    },
+  ]);
+  const result = await scanBookOnRebooks(
+    { title, author: "טמזין מארי" },
+    { fetchImpl },
+  );
+  assert.equal(result.offers.length, 1);
+});
+
+test("scanBookOnRebooks: keeps an offer when the author can't be read from the page (falls back to title-only match)", async () => {
+  const { scanBookOnRebooks } = await scanner();
+  const title = "ספר בלי קישור מחבר בדף";
+  // No /book-author/ link at all - simulates a theme/markup change.
+  const productHtml = `
+    <h1>${title}</h1>
+    <div class="shipping-options">
+      <h4><strong>נקודת חלוקה – 15 ש״ח</strong></h4>
+    </div>
+  `;
+  const fetchImpl = fakeFetch([
+    {
+      test: (u) => u.includes("rebooks.org.il/?s="),
+      status: 200,
+      body: searchPageHtml({ title }),
+    },
+    {
+      test: (u) => u.includes("/product/x-12345/"),
+      status: 200,
+      body: productHtml,
+    },
+  ]);
+  const result = await scanBookOnRebooks(
+    { title, author: "מישהו" },
+    { fetchImpl },
+  );
+  assert.equal(result.offers.length, 1);
+});
+
 test("buildPriceOfferPayload marks active=false when the offer is explicitly out of stock", async () => {
   const { buildPriceOfferPayload } = await scanner();
   const payload = buildPriceOfferPayload(

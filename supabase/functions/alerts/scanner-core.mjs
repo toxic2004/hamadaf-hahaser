@@ -573,6 +573,23 @@ export function extractAvailableBranches(html) {
   return [...new Set(names)];
 }
 
+// Author cross-check (2026-08-19, closes the gap flagged in
+// scanBookOnRebooks below). Confirmed against a real Rebooks product page
+// (fetched 2026-08-19): the author is always rendered as a link to
+// /book-author/<slug>/ right under the title ("מאת [שם המחבר]"), and the
+// same link/name repeats in the "שם / מחבר / תחום / מקט" details list.
+// Matching on the URL pattern rather than surrounding markup is
+// deliberately loose about exact tag structure, since that's the part
+// most likely to change if the site's theme is updated.
+export function extractProductAuthor(html) {
+  const match = String(html || "").match(
+    /<a\b[^>]*href=["'][^"']*\/book-author\/[^"']*["'][^>]*>([\s\S]*?)<\/a>/i,
+  );
+  if (!match) return null;
+  const author = textContent(match[1]);
+  return author || null;
+}
+
 // Final shipping decision: compares every option that is actually valid
 // for this user (self-pickup only if a carrying branch is approved,
 // distribution point and courier always since both are nationwide) and
@@ -959,23 +976,30 @@ export async function enrichRebooksShippingCosts(
         const shippingOptions = extractShippingOptions(productBody);
         const availableBranches = extractAvailableBranches(productBody);
         const best = bestKnownShipping(shippingOptions, availableBranches);
-        if (best) {
-          enriched.push({
-            ...offer,
-            shippingKnown: true,
-            shippingPrice: best.price,
-            shippingPickupPrice: best.allOptions.pickupPrice,
-            shippingPickupApproved: best.allOptions.pickupApproved,
-            shippingDistributionPrice: best.allOptions.distributionPrice,
-            shippingCourierPrice: best.allOptions.courierPrice,
-          });
-          continue;
-        }
+        // Author is read from the same already-fetched product page - no
+        // extra request (2026-08-19, closes the author cross-check gap).
+        const productAuthor = extractProductAuthor(productBody);
+        enriched.push({
+          ...offer,
+          ...(best
+            ? {
+                shippingKnown: true,
+                shippingPrice: best.price,
+                shippingPickupPrice: best.allOptions.pickupPrice,
+                shippingPickupApproved: best.allOptions.pickupApproved,
+                shippingDistributionPrice: best.allOptions.distributionPrice,
+                shippingCourierPrice: best.allOptions.courierPrice,
+              }
+            : {}),
+          productAuthor,
+        });
+        continue;
       }
     } catch {
-      // Product page unreachable - fall through and keep shipping unknown.
+      // Product page unreachable - fall through and keep shipping/author
+      // unknown, same safe behavior as before this fix existed.
     }
-    enriched.push(offer);
+    enriched.push({ ...offer, productAuthor: null });
   }
   return enriched;
 }
@@ -1026,17 +1050,16 @@ export async function scanBookOnRebooks(
   if (classified.status !== "found" || !classified.offers?.length) {
     return { status: classified.status, note: classified.note, offers: [] };
   }
-  // KNOWN GAP (2026-08-19): section 5 requires an author cross-check when
-  // the author is known, but extractSourceOffers() only captures the
-  // title-link text from each product card, not an author field - there
-  // is nothing here to check the author against yet. Rather than fake a
-  // check that silently passes everything (which would be worse than no
-  // check at all), this is left as a real limitation to flag for approval
-  // separately: either extend extractSourceOffers to also capture the
-  // card's author text (needs a real Rebooks product-card HTML sample to
-  // write a correct pattern against), or accept title-only matching for
-  // Rebooks specifically since its exact-title equality check already
-  // rejects same-author-different-book and similar-title mismatches.
+  // Author cross-check (2026-08-19, closes the gap that used to be here -
+  // confirmed against a real Rebooks product page that the author IS
+  // available, via extractProductAuthor reading the same product-page
+  // fetch already done for shipping). Section 5: a title match alone
+  // isn't enough when the author is known. If the product page's author
+  // doesn't overlap at all with the expected author, drop the offer -
+  // this catches same-title-different-author mismatches (e.g. two
+  // different books that happen to share a title). If the page's author
+  // couldn't be extracted at all (site markup changed), fall back to
+  // title-only matching rather than rejecting everything blindly.
   const enriched = await enrichRebooksShippingCosts(
     "rebooks",
     classified.offers,
@@ -1045,7 +1068,15 @@ export async function scanBookOnRebooks(
       timeoutMs,
     },
   );
-  return { status: "found", note: classified.note, offers: enriched };
+  const wantedAuthor = normalizeSearchText(book.author);
+  const verified = enriched.filter((offer) => {
+    if (!wantedAuthor || !offer.productAuthor) return true;
+    const foundAuthor = normalizeSearchText(offer.productAuthor);
+    return (
+      foundAuthor.includes(wantedAuthor) || wantedAuthor.includes(foundAuthor)
+    );
+  });
+  return { status: "found", note: classified.note, offers: verified };
 }
 
 // Builds the exact price_offers row for one verified offer. total_price is
@@ -1069,6 +1100,20 @@ export function buildPriceOfferPayload(book, offer, now = new Date()) {
     availability_status: offer.availabilityStatus,
     shipping_price: offer.shippingKnown ? offer.shippingPrice : null,
     shipping_known: Boolean(offer.shippingKnown),
+    // Informational-only breakdown (2026-08-23, main): every known
+    // shipping option, not just the cheapest one used for
+    // shipping_price/total_price/ranking above. Only set when
+    // enrichRebooksShippingCosts actually enriched this offer - left
+    // undefined (column keeps its existing/null value) otherwise, never
+    // guessed.
+    ...(offer.shippingPickupPrice !== undefined
+      ? {
+          shipping_pickup_price: offer.shippingPickupPrice,
+          shipping_pickup_approved: offer.shippingPickupApproved,
+          shipping_distribution_price: offer.shippingDistributionPrice,
+          shipping_courier_price: offer.shippingCourierPrice,
+        }
+      : {}),
     active: offer.availabilityStatus === "במלאי",
     is_removed: false,
     last_checked_at: now.toISOString(),
