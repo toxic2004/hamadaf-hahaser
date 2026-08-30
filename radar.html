@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width,initial-scale=1,viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#ff5c7a" />
+    <title>רדאר המדף | המדף החסר</title>
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="./assets/logo-hamadaf.svg?v=20260823-1"
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;700;800;900&family=Assistant:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./dashboard.css?v=20260823-1" />
+    <link rel="stylesheet" href="./radar-styles.css?v=20260830-1" />
+  </head>
+  <body>
+    <section id="authCard" class="authCard">
+      <h2>כניסה לרדאר המדף</h2>
+      <p class="sub">השתמש באותו חשבון של המדף החסר.</p>
+      <div class="field">
+        <label for="email">אימייל</label><input id="email" type="email" />
+      </div>
+      <div class="field">
+        <label for="password">סיסמה</label
+        ><input id="password" type="password" />
+      </div>
+      <button id="login" class="primary">כניסה</button>
+      <p id="authMessage" class="sub" aria-live="polite"></p>
+    </section>
+    <main id="app" class="shell hidden">
+      <header class="top">
+        <div>
+          <h1>רדאר המדף 📡</h1>
+          <p class="sub">
+            הצעות שהתקבלו ידנית מקבוצות פייסבוק וכדומה - לא מאומתות אוטומטית
+          </p>
+        </div>
+        <nav class="sourceLinks">
+          <a href="./">חזרה למדף</a>
+          <a href="prices.html">השוואת מחירים</a>
+          <a href="notifications.html">התראות</a>
+          <a href="report.html">הדוח המקצועי</a>
+        </nav>
+      </header>
+      <div id="loading" class="notice">טוען נתונים...</div>
+      <div id="error" class="error hidden" role="alert"></div>
+      <section id="content" class="hidden">
+        <article class="panel">
+          <p class="sub">
+            כדי להוסיף הצעה: שלח לקלוד צילום מסך או טקסט מקבוצת פייסבוק בצ'אט
+            הרגיל. קלוד יחלץ את הפרטים, יבדוק התאמה לספר מרשימת החיפוש, ויבקש
+            אישור אם ההתאמה אינה חד-משמעית. הדף הזה רק מציג ומנהל את מה שכבר
+            נקלט.
+          </p>
+        </article>
+        <section id="radarCards"></section>
+      </section>
+    </main>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.110.9"></script>
+    <script src="./supabase-client.js"></script>
+    <script src="./radar.js"></script>
+  </body>
+</html>

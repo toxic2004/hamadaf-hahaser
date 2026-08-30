@@ -1,0 +1,27 @@
+.radarCard {
+  margin-bottom: 14px;
+}
+.radarCard h2 {
+  margin: 0 0 2px;
+}
+.radarOffer {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 10px 14px;
+  margin-top: 10px;
+  background: var(--card);
+}
+.radarOffer.muted {
+  opacity: 0.6;
+}
+.radarOffer.purchased {
+  border-color: var(--teal);
+  background: var(--green2);
+  opacity: 1;
+}
+.radarOffer p {
+  margin: 2px 0;
+}
+.radarOffer button {
+  margin-top: 6px;
+}
