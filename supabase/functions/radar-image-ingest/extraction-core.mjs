@@ -41,13 +41,31 @@ ${bookList || "(אין ספרים ברשימה)"}
 {"books": [{"book_id": string|null, "matched_title": string, "confidence": "high"|"low"|"none", "seller_name": string|null, "phone": string|null, "item_price": number|null, "shipping_price": number|null, "pickup_location": string|null, "bundle_note": string|null}]}`;
 }
 
+// Real model output (confirmed 2026-08-31 against a live Haiku call, not
+// assumed) doesn't always follow "return only JSON" literally - it can
+// wrap the JSON in markdown code fences and/or add explanatory prose
+// before or after it. Extracting the JSON substring first, rather than
+// trusting the whole response to be valid JSON, is what makes this
+// robust to that instead of discarding a perfectly good extraction as
+// "invalid_json".
+function extractJsonSubstring(rawText) {
+  const fenced = rawText.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fenced) return fenced[1].trim();
+  const firstBrace = rawText.indexOf("{");
+  const lastBrace = rawText.lastIndexOf("}");
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    return rawText.slice(firstBrace, lastBrace + 1);
+  }
+  return rawText;
+}
+
 // Never trusts the model's output shape blindly - every field is
 // re-validated here. A malformed or partially-invented response degrades
 // to "nothing extracted" rather than passing bad data through.
 export function parseModelResponse(rawText, validBookIds) {
   let parsed;
   try {
-    parsed = JSON.parse(rawText);
+    parsed = JSON.parse(extractJsonSubstring(rawText));
   } catch {
     return { books: [], error: "invalid_json" };
   }

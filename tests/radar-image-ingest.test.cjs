@@ -83,6 +83,21 @@ test("parseModelResponse: malformed JSON degrades to empty result, never throws"
   assert.deepEqual(result.books, []);
 });
 
+test("parseModelResponse: regression - real Haiku output (confirmed live 2026-08-31), markdown-fenced JSON plus trailing prose the model added despite being told not to", async () => {
+  const { parseModelResponse } = await extraction();
+  // Exact text content returned by a real claude-haiku-4-5-20251001 call
+  // during live testing - the model did NOT follow "return only JSON,
+  // no text before or after" literally. The parser has to handle real
+  // model behavior, not just the ideal case the prompt asks for.
+  const raw =
+    '```json\n{\n  "books": [\n    {\n      "book_id": null,\n      "matched_title": null,\n      "confidence": "none",\n      "seller_name": null,\n      "phone": null,\n      "item_price": 35,\n      "shipping_price": null,\n      "pickup_location": null,\n      "bundle_note": null\n    }\n  ]\n}\n```\n\nהערה: הטקסט בתמונה לא היה ברור מספיק כדי לזהות שם ספר.';
+  const result = parseModelResponse(raw, ["book-1"]);
+  assert.equal(result.error, null);
+  assert.equal(result.books.length, 1);
+  assert.equal(result.books[0].item_price, 35);
+  assert.equal(result.books[0].confidence, "none");
+});
+
 test("parseModelResponse: missing books array degrades safely", async () => {
   const { parseModelResponse } = await extraction();
   const result = parseModelResponse(JSON.stringify({ foo: "bar" }), ["book-1"]);
