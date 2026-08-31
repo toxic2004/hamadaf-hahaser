@@ -79,6 +79,53 @@
 .radarOffer p {
   margin: 2px 0;
 }
+
+/* Card-level "קניתי" - one per book, not per competing offer, so it's
+   deliberately visually distinct from the offer rows above it: pulled to
+   the left edge (opposite where the title/cover start in this RTL
+   layout), pill-shaped, warm accent color instead of the neutral .ghost
+   style used elsewhere on the page. */
+.radarBuyWrap {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+.radarBuyButton {
+  background: linear-gradient(135deg, var(--green) 0%, #ff8ca3 100%);
+  color: white;
+  border: none;
+  border-radius: 999px;
+  padding: 10px 22px;
+  font-weight: 800;
+  font-size: 15px;
+  box-shadow: 0 6px 16px rgba(255, 92, 122, 0.35);
+  cursor: pointer;
+}
+.radarBuyButton:active {
+  transform: scale(0.97);
+}
+.offerPicker {
+  margin-top: 10px;
+  padding: 10px;
+  background: var(--green2);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+.offerPicker label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.offerPickerSelect {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px;
+  background: white;
+}
 .radarOffer button {
   margin-top: 6px;
 }
