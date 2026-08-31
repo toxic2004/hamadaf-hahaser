@@ -55,8 +55,37 @@ function clearError() {
 
 function coverHtml(book) {
   return book.cover
-    ? `<img class="radarCover" src="${escapeHtml(book.cover)}" alt="${escapeHtml(book.title)}" loading="lazy">`
+    ? `<img class="radarCover radarCoverZoomable" src="${escapeHtml(book.cover)}" alt="${escapeHtml(book.title)}" loading="lazy" draggable="false">`
     : `<div class="radarCover radarCoverFallback">${escapeHtml((book.title || "").trim().split(/\s+/)[0]?.slice(0, 6) || "")}</div>`;
+}
+
+// Press-and-hold to preview the cover larger, release to go back - not a
+// click-to-toggle modal. Only real <img> covers are zoomable (the
+// fallback initials div has nothing worth enlarging). Offers themselves
+// have no image at all (source screenshots are deliberately never
+// saved, see docs/2026-08-30-radar-hamadaf-spec.md) - this is the one
+// image that exists per card, the book cover.
+function showImageZoom(src, alt) {
+  $("imageZoomImg").src = src;
+  $("imageZoomImg").alt = alt;
+  $("imageZoomOverlay").classList.remove("hidden");
+}
+
+function hideImageZoom() {
+  $("imageZoomOverlay").classList.add("hidden");
+  $("imageZoomImg").src = "";
+}
+
+function bindCoverZoom() {
+  document.querySelectorAll(".radarCoverZoomable").forEach((img) => {
+    img.onpointerdown = (event) => {
+      event.preventDefault();
+      showImageZoom(img.src, img.alt);
+    };
+    img.onpointerup = hideImageZoom;
+    img.onpointerleave = hideImageZoom;
+    img.onpointercancel = hideImageZoom;
+  });
 }
 
 // Inline purchase form instead of window.prompt(): chained prompt()
@@ -507,6 +536,7 @@ function render() {
   $("archiveToggle").classList.toggle("hidden", archivedBooks.length === 0);
 
   bindOfferActions();
+  bindCoverZoom();
 }
 
 async function loadData() {
@@ -586,6 +616,12 @@ $("archiveToggle").onclick = () => {
 };
 db.auth.getSession().then(({ data }) => showSession(data.session));
 db.auth.onAuthStateChange((event, session) => showSession(session));
+
+// Fallback dismissal - the overlay element is static in the HTML, so
+// this only needs binding once, not after every render() like the
+// per-cover handlers above.
+$("imageZoomOverlay").onclick = hideImageZoom;
+$("imageZoomOverlay").onpointerup = hideImageZoom;
 
 const AUTO_REFRESH_MS = 90000;
 setInterval(() => {
