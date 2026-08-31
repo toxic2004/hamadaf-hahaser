@@ -224,6 +224,44 @@ async function confirmPurchase(offerId) {
   await loadData();
 }
 
+// Rather than trying to detect/allowlist every possible source format
+// (HEIC from iPhone camera, WEBP, whatever), every image is normalized
+// to JPEG client-side via canvas before it's ever sent. Safari - which
+// is what this is actually used on - natively decodes HEIC into an
+// <img> element even though it can't be sent to the API directly, so
+// drawing it to a canvas and re-exporting as JPEG covers the real
+// iPhone-camera-photo case, not just already-compatible formats.
+function normalizeImageToJpeg(file) {
+  return new Promise((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0);
+      canvas.toBlob(
+        (blob) => {
+          URL.revokeObjectURL(objectUrl);
+          if (!blob) {
+            reject(new Error("Canvas conversion produced no image"));
+            return;
+          }
+          resolve(blob);
+        },
+        "image/jpeg",
+        0.9,
+      );
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("Browser could not decode this image format"));
+    };
+    img.src = objectUrl;
+  });
+}
+
 function fileToBase64(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -359,13 +397,15 @@ async function saveIngestCandidate(index) {
 $("ingestFile").onchange = async () => {
   const file = $("ingestFile").files[0];
   if (!file) return;
-  $("ingestStatus").textContent = "מנתח תמונה...";
+  $("ingestStatus").textContent = "מעבד תמונה...";
   $("ingestResults").innerHTML = "";
   pendingIngestCandidates = [];
   try {
-    const imageBase64 = await fileToBase64(file);
+    const normalized = await normalizeImageToJpeg(file);
+    $("ingestStatus").textContent = "מנתח תמונה...";
+    const imageBase64 = await fileToBase64(normalized);
     const { data, error } = await db.functions.invoke("radar-image-ingest", {
-      body: { image_base64: imageBase64, media_type: file.type },
+      body: { image_base64: imageBase64, media_type: "image/jpeg" },
     });
     if (error || !data?.ok) {
       $("ingestStatus").textContent =
@@ -381,7 +421,8 @@ $("ingestFile").onchange = async () => {
     pendingIngestCandidates = data.books;
     renderIngestResults();
   } catch {
-    $("ingestStatus").textContent = "הניתוח נכשל. נסה שוב.";
+    $("ingestStatus").textContent =
+      "לא ניתן היה לקרוא את הקובץ הזה כתמונה. נסה קובץ אחר, או שלח לקלוד בצ'אט הרגיל.";
   } finally {
     $("ingestFile").value = "";
   }
