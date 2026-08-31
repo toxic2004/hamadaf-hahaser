@@ -5,6 +5,32 @@
 const MODEL = "claude-haiku-4-5-20251001";
 const MAX_BOOKS_IN_PROMPT = 200;
 
+// Same approved pickup regions as the price rule used everywhere else in
+// this project (section 6 of the original spec). Checked here in code,
+// not left to the model to judge - same reasoning as
+// isApprovedPickupBranch() in the report-engine's scanner-core.mjs:
+// a fixed list is reliable, asking a model to "decide" whether a region
+// counts is not.
+const APPROVED_PICKUP_REGIONS = [
+  "פתח תקווה",
+  "בני ברק",
+  "תל אביב",
+  "גוש דן",
+  "רמת גן",
+  "גבעתיים",
+  "חולון",
+  "בת ים",
+  "מודיעין",
+  "ירושלים",
+];
+
+export function isApprovedPickupRegion(pickupLocation) {
+  if (!pickupLocation) return false;
+  return APPROVED_PICKUP_REGIONS.some((region) =>
+    pickupLocation.includes(region),
+  );
+}
+
 // Section 3 of the spec (kept unchanged by the architectural amendment):
 // matching happens ONLY against books already in the 'מחפש' list - never
 // invented, never matched against books in other statuses.
@@ -18,17 +44,29 @@ export function buildBookContextLines(books) {
     .join("\n");
 }
 
-export function buildExtractionPrompt(books) {
+// contextText: free text the user optionally types alongside the image.
+// Added 2026-08-31 after a real case (Limor Noy conversation) where the
+// book titles were only in the surrounding chat text, never in the
+// screenshot itself - a single image alone can't reproduce what a human
+// reading the whole conversation would see. This doesn't fully close
+// that gap (the automated system still only sees what's typed in for
+// this one upload, not the full conversation history the user has with
+// each seller), but it closes the part that's actually fixable: letting
+// the user hand over the text that matters, not just the picture.
+export function buildExtractionPrompt(books, contextText) {
   const bookList = buildBookContextLines(books);
+  const contextSection = contextText
+    ? `\n\nטקסט נוסף שהמשתמש הזין ידנית (למשל תוכן ההודעה שמסביב לצילום המסך):\n${contextText}\n`
+    : "";
   return `אתה עוזר לחלץ נתונים מצילום מסך או טקסט של הצעת מכירת ספר יד שנייה מקבוצת פייסבוק.
 
 רשימת הספרים שהמשתמש מחפש כרגע (התאמה מותרת רק מול הרשימה הזו):
 ${bookList || "(אין ספרים ברשימה)"}
-
+${contextSection}
 חלץ מהתמונה/טקסט כל ספר המוצע שתואם לרשימה למעלה. עבור כל ספר, החזר:
 - book_id: המזהה [id:...] מהרשימה למעלה, רק אם ההתאמה כמעט ודאית. אחרת null.
 - matched_title: שם הספר מהרשימה שההצעה כנראה מתאימה אליו, גם אם book_id הוא null.
-- confidence: "high" / "low" / "none" - "high" רק אם ההתאמה חד-משמעית לחלוטין (כותר מדויק, לא חלק/מהדורה אחרת).
+- confidence: "high" / "low" / "none" - "high" רק אם ההתאמה חד-משמעית לחלוטין (כותר מדויק, לא חלק/מהדורה אחרת. שים לב: "חלק 1", "חלק 2" או מהדורה שונה הם ספר אחר, לא אותה התאמה).
 - seller_name, phone: כפי שמופיע, או null אם לא ידוע.
 - item_price: מספר בלבד, או null אם לא צוין מחיר מפורש לספר הזה בנפרד (למשל אם זה מחיר לחבילה של כמה ספרים יחד - אל תמציא פיצול, השאר null ותציין זאת ב-bundle_note).
 - shipping_price: מספר, או null אם לא צוין.
@@ -113,6 +151,17 @@ export function parseModelResponse(rawText, validBookIds) {
           typeof item.pickup_location === "string"
             ? item.pickup_location
             : null,
+        // Computed here, not asked from the model - same reasoning as
+        // isApprovedPickupBranch() elsewhere in this project. This does
+        // NOT set shipping_price - it's informational for the review UI
+        // only. Actually treating approved free pickup as the total
+        // price is still a decision the reviewing human makes, exactly
+        // like the report engine's pickup handling.
+        pickup_approved: isApprovedPickupRegion(
+          typeof item.pickup_location === "string"
+            ? item.pickup_location
+            : null,
+        ),
         bundle_note:
           typeof item.bundle_note === "string" ? item.bundle_note : null,
       };
@@ -126,10 +175,11 @@ export async function extractOffersFromImage({
   imageBase64,
   mediaType,
   books,
+  contextText,
   timeoutMs = 30_000,
 }) {
   if (!apiKey) throw new Error("Missing Anthropic API key");
-  const prompt = buildExtractionPrompt(books);
+  const prompt = buildExtractionPrompt(books, contextText);
   const response = await fetchImpl("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {

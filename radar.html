@@ -20,7 +20,7 @@
       rel="stylesheet"
     />
     <link rel="stylesheet" href="./dashboard.css?v=20260823-1" />
-    <link rel="stylesheet" href="./radar-styles.css?v=20260831-3" />
+    <link rel="stylesheet" href="./radar-styles.css?v=20260831-4" />
   </head>
   <body>
     <section id="authCard" class="authCard">
@@ -69,6 +69,19 @@
             אישור לפני שמירה, בדיוק כמו בצ'אט.
           </p>
           <input type="file" id="ingestFile" accept="image/*" />
+          <div class="field">
+            <label for="ingestContextText"
+              >טקסט נוסף מהשיחה (אופציונלי, אבל מומלץ)</label
+            >
+            <textarea
+              id="ingestContextText"
+              rows="3"
+              placeholder="למשל: שם הספר שכתבת בהודעה, אם הוא לא מופיע בצילום עצמו"
+            ></textarea>
+          </div>
+          <button id="ingestAnalyzeButton" class="primary" disabled>
+            נתח תמונה
+          </button>
           <p id="ingestStatus" class="sub" aria-live="polite"></p>
           <div id="ingestResults"></div>
         </article>
@@ -81,6 +94,6 @@
     </main>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.110.9"></script>
     <script src="./supabase-client.js"></script>
-    <script src="./radar.js?v=20260831-3"></script>
+    <script src="./radar.js?v=20260831-4"></script>
   </body>
 </html>

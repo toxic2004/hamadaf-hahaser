@@ -218,3 +218,50 @@ test("extractOffersFromImage: missing API key throws immediately, never attempts
     /Missing Anthropic API key/,
   );
 });
+
+test("isApprovedPickupRegion: matches approved regions per the same list used elsewhere in this project", async () => {
+  const { isApprovedPickupRegion } = await extraction();
+  assert.equal(isApprovedPickupRegion("איסוף מפתח תקווה"), true);
+  assert.equal(isApprovedPickupRegion("תל אביב, כורש 18"), true);
+  assert.equal(isApprovedPickupRegion("זכרון יעקב"), false);
+  assert.equal(isApprovedPickupRegion("חיפה"), false);
+  assert.equal(isApprovedPickupRegion(null), false);
+});
+
+test("parseModelResponse: attaches pickup_approved computed in code, not asked from the model - regression for the מי הזיז את הגבינה שלי style bug (unapproved pickup must never look equivalent to approved)", async () => {
+  const { parseModelResponse } = await extraction();
+  const raw = JSON.stringify({
+    books: [
+      {
+        book_id: "book-1",
+        matched_title: "אנטי שביר",
+        confidence: "high",
+        item_price: 20,
+        pickup_location: "זכרון יעקב",
+      },
+      {
+        book_id: "book-2",
+        matched_title: "מיליונר ברגע",
+        confidence: "high",
+        item_price: 20,
+        pickup_location: "פתח תקווה",
+      },
+    ],
+  });
+  const result = parseModelResponse(raw, ["book-1", "book-2"]);
+  assert.equal(result.books[0].pickup_approved, false);
+  assert.equal(result.books[1].pickup_approved, true);
+});
+
+test("buildExtractionPrompt: includes user-provided context text when given, closing the gap where book names live in surrounding chat text rather than the screenshot itself (real case: Limor Noy conversation)", async () => {
+  const { buildExtractionPrompt } = await extraction();
+  const prompt = buildExtractionPrompt(BOOKS, "המדריך להשקעות של אבא עשיר וגריט כמה?");
+  assert.match(prompt, /אבא עשיר/);
+  assert.match(prompt, /טקסט נוסף שהמשתמש הזין ידנית/);
+});
+
+test("buildExtractionPrompt: omits the context section entirely when no text given, doesn't add noise", async () => {
+  const { buildExtractionPrompt } = await extraction();
+  const prompt = buildExtractionPrompt(BOOKS, undefined);
+  assert.doesNotMatch(prompt, /טקסט נוסף שהמשתמש הזין ידנית/);
+});

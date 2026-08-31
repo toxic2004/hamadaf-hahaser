@@ -294,6 +294,12 @@ function ingestCardHtml(candidate, index) {
   const bundleNote = candidate.bundle_note
     ? `<p class="ingestWarning">⚠️ ${escapeHtml(candidate.bundle_note)}</p>`
     : "";
+  const pickupApprovedNote =
+    candidate.pickup_location && candidate.pickup_approved
+      ? `<p class="sub">✓ אזור איסוף מוכר כמתאים</p>`
+      : candidate.pickup_location && !candidate.pickup_approved
+        ? `<p class="ingestWarning">⚠️ אזור האיסוף לא ברשימת האזורים המתאימים לך - בדוק בעצמך אם זה נוח</p>`
+        : "";
   return `<div class="panel ingestCard" data-ingest-card="${index}">
     ${confidenceBadge(candidate.confidence)}
     ${bundleNote}
@@ -324,6 +330,7 @@ function ingestCardHtml(candidate, index) {
     <div class="field">
       <label>מיקום איסוף</label>
       <input type="text" class="ingestPickup" value="${escapeHtml(candidate.pickup_location || "")}">
+      ${pickupApprovedNote}
     </div>
     <div class="purchaseFormActions">
       <button class="primary" data-save-ingest="${index}">שמור הצעה</button>
@@ -394,9 +401,25 @@ async function saveIngestCandidate(index) {
   await loadData();
 }
 
-$("ingestFile").onchange = async () => {
-  const file = $("ingestFile").files[0];
+let selectedIngestFile = null;
+
+$("ingestFile").onchange = () => {
+  selectedIngestFile = $("ingestFile").files[0] || null;
+  $("ingestAnalyzeButton").disabled = !selectedIngestFile;
+  $("ingestStatus").textContent = selectedIngestFile
+    ? "תמונה נבחרה - אפשר להוסיף טקסט ואז ללחוץ 'נתח תמונה'."
+    : "";
+};
+
+// Deliberately a separate button rather than triggering on file
+// selection: the context-text field (added to close the "book name was
+// only in the surrounding chat message" gap) needs to be fillable
+// *after* picking the image too, not just before - an onchange trigger
+// would silently ignore anything typed afterward.
+$("ingestAnalyzeButton").onclick = async () => {
+  const file = selectedIngestFile;
   if (!file) return;
+  const contextText = $("ingestContextText").value.trim();
   $("ingestStatus").textContent = "מעבד תמונה...";
   $("ingestResults").innerHTML = "";
   pendingIngestCandidates = [];
@@ -405,7 +428,11 @@ $("ingestFile").onchange = async () => {
     $("ingestStatus").textContent = "מנתח תמונה...";
     const imageBase64 = await fileToBase64(normalized);
     const { data, error } = await db.functions.invoke("radar-image-ingest", {
-      body: { image_base64: imageBase64, media_type: "image/jpeg" },
+      body: {
+        image_base64: imageBase64,
+        media_type: "image/jpeg",
+        context_text: contextText || undefined,
+      },
     });
     if (error || !data?.ok) {
       $("ingestStatus").textContent =
@@ -425,6 +452,9 @@ $("ingestFile").onchange = async () => {
       "לא ניתן היה לקרוא את הקובץ הזה כתמונה. נסה קובץ אחר, או שלח לקלוד בצ'אט הרגיל.";
   } finally {
     $("ingestFile").value = "";
+    $("ingestContextText").value = "";
+    selectedIngestFile = null;
+    $("ingestAnalyzeButton").disabled = true;
   }
 };
 
