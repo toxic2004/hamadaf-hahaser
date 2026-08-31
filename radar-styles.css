@@ -157,3 +157,29 @@
 #archiveToggle {
   margin: 10px 0;
 }
+.ingestCard {
+  margin-top: 12px;
+}
+.ingestWarning {
+  background: #fff4d6;
+  color: #8a6100;
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0 0 10px;
+}
+#ingestFile {
+  display: block;
+  margin: 8px 0;
+}
+/* .field select only gets min-height from dashboard.css, not the
+   border/padding/radius .field input gets - would look inconsistent
+   next to the price/seller inputs in the same form otherwise. */
+.field select {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px;
+  background: white;
+}

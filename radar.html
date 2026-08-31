@@ -20,7 +20,7 @@
       rel="stylesheet"
     />
     <link rel="stylesheet" href="./dashboard.css?v=20260823-1" />
-    <link rel="stylesheet" href="./radar-styles.css?v=20260831-2" />
+    <link rel="stylesheet" href="./radar-styles.css?v=20260831-3" />
   </head>
   <body>
     <section id="authCard" class="authCard">
@@ -62,6 +62,16 @@
             נקלט.
           </p>
         </article>
+        <article class="panel">
+          <h2 style="margin-top: 0">הוספת הצעה מתמונה</h2>
+          <p class="sub">
+            העלה צילום מסך - הניתוח האוטומטי לא שומר את התמונה עצמה, ותמיד ידרוש
+            אישור לפני שמירה, בדיוק כמו בצ'אט.
+          </p>
+          <input type="file" id="ingestFile" accept="image/*" />
+          <p id="ingestStatus" class="sub" aria-live="polite"></p>
+          <div id="ingestResults"></div>
+        </article>
         <section id="radarCards"></section>
         <button id="archiveToggle" class="ghost hidden">
           הצג ספרים שנרכשו
@@ -71,6 +81,6 @@
     </main>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.110.9"></script>
     <script src="./supabase-client.js"></script>
-    <script src="./radar.js?v=20260831-2"></script>
+    <script src="./radar.js?v=20260831-3"></script>
   </body>
 </html>
