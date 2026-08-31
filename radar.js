@@ -224,6 +224,169 @@ async function confirmPurchase(offerId) {
   await loadData();
 }
 
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      // reader.result is "data:image/png;base64,AAAA..." - strip the prefix.
+      const commaIndex = reader.result.indexOf(",");
+      resolve(reader.result.slice(commaIndex + 1));
+    };
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
+function confidenceBadge(confidence) {
+  if (confidence === "high") return "";
+  const label = confidence === "low" ? "התאמה לא ודאית" : "לא זוהתה התאמה";
+  return `<p class="ingestWarning">⚠️ ${label} - בדוק ובחר את הספר הנכון</p>`;
+}
+
+function bookOptionsHtml(selectedId) {
+  return activeBooks
+    .map(
+      (book) =>
+        `<option value="${book.id}"${book.id === selectedId ? " selected" : ""}>${escapeHtml(book.title)}</option>`,
+    )
+    .join("");
+}
+
+function ingestCardHtml(candidate, index) {
+  const bundleNote = candidate.bundle_note
+    ? `<p class="ingestWarning">⚠️ ${escapeHtml(candidate.bundle_note)}</p>`
+    : "";
+  return `<div class="panel ingestCard" data-ingest-card="${index}">
+    ${confidenceBadge(candidate.confidence)}
+    ${bundleNote}
+    <div class="field">
+      <label>ספר</label>
+      <select class="ingestBook">
+        <option value="">- בחר ספר -</option>
+        ${bookOptionsHtml(candidate.book_id)}
+      </select>
+      ${candidate.matched_title ? `<p class="sub">קלוד זיהה: ${escapeHtml(candidate.matched_title)}</p>` : ""}
+    </div>
+    <div class="field">
+      <label>מחיר (חובה - לא ניתן לשמור בלי מחיר)</label>
+      <input type="number" min="0" step="0.01" class="ingestPrice" value="${candidate.item_price ?? ""}">
+    </div>
+    <div class="field">
+      <label>מוכר</label>
+      <input type="text" class="ingestSeller" value="${escapeHtml(candidate.seller_name || "")}">
+    </div>
+    <div class="field">
+      <label>טלפון</label>
+      <input type="text" class="ingestPhone" value="${escapeHtml(candidate.phone || "")}">
+    </div>
+    <div class="field">
+      <label>משלוח (אם ידוע)</label>
+      <input type="number" min="0" step="0.01" class="ingestShipping" value="${candidate.shipping_price ?? ""}">
+    </div>
+    <div class="field">
+      <label>מיקום איסוף</label>
+      <input type="text" class="ingestPickup" value="${escapeHtml(candidate.pickup_location || "")}">
+    </div>
+    <div class="purchaseFormActions">
+      <button class="primary" data-save-ingest="${index}">שמור הצעה</button>
+      <button class="ghost" data-dismiss-ingest="${index}">התעלם</button>
+    </div>
+    <p class="sub ingestCardMessage" aria-live="polite"></p>
+  </div>`;
+}
+
+let pendingIngestCandidates = [];
+
+function renderIngestResults() {
+  $("ingestResults").innerHTML = pendingIngestCandidates
+    .map((candidate, index) =>
+      candidate ? ingestCardHtml(candidate, index) : "",
+    )
+    .join("");
+  bindIngestActions();
+}
+
+function bindIngestActions() {
+  document.querySelectorAll("[data-dismiss-ingest]").forEach((button) => {
+    button.onclick = () => {
+      pendingIngestCandidates[Number(button.dataset.dismissIngest)] = null;
+      renderIngestResults();
+    };
+  });
+  document.querySelectorAll("[data-save-ingest]").forEach((button) => {
+    button.onclick = () =>
+      saveIngestCandidate(Number(button.dataset.saveIngest));
+  });
+}
+
+async function saveIngestCandidate(index) {
+  const card = document.querySelector(`[data-ingest-card="${index}"]`);
+  if (!card) return;
+  const message = card.querySelector(".ingestCardMessage");
+  const bookId = card.querySelector(".ingestBook").value;
+  const priceValue = card.querySelector(".ingestPrice").value;
+  const shippingValue = card.querySelector(".ingestShipping").value;
+  if (!bookId) {
+    message.textContent = "יש לבחור ספר לפני השמירה.";
+    return;
+  }
+  const price = Number(priceValue);
+  if (!Number.isFinite(price) || price < 0 || priceValue === "") {
+    message.textContent = "מחיר הוא שדה חובה ולא יכול להישאר ריק.";
+    return;
+  }
+  message.textContent = "שומר...";
+  const { error } = await db.from("manual_offers").insert({
+    user_id: user.id,
+    book_id: bookId,
+    seller_name: card.querySelector(".ingestSeller").value.trim() || null,
+    phone: card.querySelector(".ingestPhone").value.trim() || null,
+    item_price: price,
+    shipping_price: shippingValue === "" ? null : Number(shippingValue),
+    pickup_location: card.querySelector(".ingestPickup").value.trim() || null,
+    source_note: "נוסף דרך העלאת תמונה ברדאר המדף.",
+    status: "פעילה",
+  });
+  if (error) {
+    message.textContent = "השמירה נכשלה. נסה שוב.";
+    return;
+  }
+  pendingIngestCandidates[index] = null;
+  renderIngestResults();
+  await loadData();
+}
+
+$("ingestFile").onchange = async () => {
+  const file = $("ingestFile").files[0];
+  if (!file) return;
+  $("ingestStatus").textContent = "מנתח תמונה...";
+  $("ingestResults").innerHTML = "";
+  pendingIngestCandidates = [];
+  try {
+    const imageBase64 = await fileToBase64(file);
+    const { data, error } = await db.functions.invoke("radar-image-ingest", {
+      body: { image_base64: imageBase64, media_type: file.type },
+    });
+    if (error || !data?.ok) {
+      $("ingestStatus").textContent =
+        "הניתוח נכשל. נסה שוב או שלח את התמונה לקלוד בצ'אט הרגיל.";
+      return;
+    }
+    if (!data.books?.length) {
+      $("ingestStatus").textContent = "לא זוהה בתמונה ספר מרשימת החיפוש שלך.";
+      return;
+    }
+    $("ingestStatus").textContent =
+      `זוהו ${data.books.length} הצעות אפשריות - בדוק ואשר כל אחת לפני שמירה.`;
+    pendingIngestCandidates = data.books;
+    renderIngestResults();
+  } catch {
+    $("ingestStatus").textContent = "הניתוח נכשל. נסה שוב.";
+  } finally {
+    $("ingestFile").value = "";
+  }
+};
+
 function render() {
   const offersByBook = new Map();
   for (const offer of offers) {
