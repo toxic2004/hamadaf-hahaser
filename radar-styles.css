@@ -176,6 +176,17 @@
 .radarOffer button {
   margin-top: 6px;
 }
+.dismissButton {
+  background: white;
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-inline-start: 8px;
+}
 .purchaseForm {
   margin-top: 10px;
   padding-top: 10px;

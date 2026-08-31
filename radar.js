@@ -5,6 +5,7 @@ const $ = (id) => document.getElementById(id);
 let user;
 let activeBooks = [];
 let archivedBooks = [];
+let dismissedBooksForDisplay = [];
 let offers = [];
 
 function escapeHtml(value) {
@@ -112,6 +113,7 @@ function purchaseFormHtml(offer) {
 
 function offerRow(offer, isCheapest) {
   const isPurchased = offer.status === "נקנתה";
+  const isActive = offer.status === "פעילה";
   const shippingKnown =
     offer.shipping_price !== null && offer.shipping_price !== undefined;
   const shipping = shippingKnown
@@ -136,12 +138,20 @@ function offerRow(offer, isCheapest) {
     isCheapest && offer.status === "פעילה"
       ? `<span class="cheapestBadge">🏆 הזול ביותר</span>`
       : "";
+  // Per-offer, not per-card like "קניתי" - "too expensive"/"not
+  // relevant" is a judgment about one specific offer, not the whole
+  // book. Dismissed offers move out of this card entirely into the
+  // separate "הצעות שנדחו" section (see renderDismissedSection).
+  const dismissButton = isActive
+    ? `<button class="dismissButton" data-dismiss-offer="${offer.id}">✕ לא רלוונטי</button>`
+    : "";
   return `<div class="radarOffer${offer.status !== "פעילה" ? " muted" : ""}${isPurchased ? " purchased" : ""}" data-offer-id="${offer.id}">
     ${cheapestBadge}
     <p><strong class="radarOfferPrice">${money(offer.item_price)}</strong> · ${shipping}${total}</p>
     <p class="sub">${contact}${pickup}</p>
     <p class="sub">הוזן ${formatDate(offer.entered_at)} · ${escapeHtml(offer.status)}</p>
     ${purchasedNote}
+    ${dismissButton}
   </div>`;
 }
 
@@ -174,9 +184,12 @@ function buyControlHtml(book, activeOffers) {
 }
 
 function bookCard(book, bookOffers, isArchived) {
-  const sorted = [...bookOffers].sort(
-    (a, b) => Number(a.item_price) - Number(b.item_price),
-  );
+  // Dismissed offers ("✕ לא רלוונטי") move out of this card entirely -
+  // they live only in the separate "הצעות שנדחו" section, so a card
+  // doesn't accumulate clutter from offers the user already said no to.
+  const sorted = [...bookOffers]
+    .filter((offer) => offer.status !== "נדחתה")
+    .sort((a, b) => Number(a.item_price) - Number(b.item_price));
   const activeOffers = sorted.filter((offer) => offer.status === "פעילה");
   // Only meaningful with real competition - one offer being "the cheapest"
   // among itself isn't worth a badge.
@@ -226,6 +239,12 @@ function bindOfferActions() {
       startPurchaseFor(offerId, wrap);
     };
   });
+  document.querySelectorAll("[data-dismiss-offer]").forEach((button) => {
+    button.onclick = () => dismissOffer(button.dataset.dismissOffer);
+  });
+  document.querySelectorAll("[data-restore-offer]").forEach((button) => {
+    button.onclick = () => restoreOffer(button.dataset.restoreOffer);
+  });
 }
 
 function bindPurchaseFormActions(scope) {
@@ -258,6 +277,37 @@ async function confirmPurchase(offerId) {
   });
   if (error) {
     message.textContent = "הסימון נכשל. נסה שוב.";
+    return;
+  }
+  clearError();
+  await loadData();
+}
+
+// Direct table update rather than an RPC like the purchase flow - this
+// only ever touches one table (manual_offers) and one row, no
+// cross-table atomicity concern the way "קניתי" has (books + siblings).
+// RLS (manual_offers_owner_update) already enforces the user can only
+// touch their own rows.
+async function dismissOffer(offerId) {
+  const { error } = await db
+    .from("manual_offers")
+    .update({ status: "נדחתה", dismissed_at: new Date().toISOString() })
+    .eq("id", offerId);
+  if (error) {
+    showError("הפעולה נכשלה. נסה שוב.");
+    return;
+  }
+  clearError();
+  await loadData();
+}
+
+async function restoreOffer(offerId) {
+  const { error } = await db
+    .from("manual_offers")
+    .update({ status: "פעילה", dismissed_at: null })
+    .eq("id", offerId);
+  if (error) {
+    showError("הפעולה נכשלה. נסה שוב.");
     return;
   }
   clearError();
@@ -513,14 +563,60 @@ $("ingestAnalyzeButton").onclick = async () => {
   }
 };
 
+function dismissedOfferRow(offer) {
+  const shippingKnown =
+    offer.shipping_price !== null && offer.shipping_price !== undefined;
+  const shipping = shippingKnown
+    ? `משלוח: ${money(offer.shipping_price)}`
+    : "משלוח: לא ידוע";
+  const contact = [offer.seller_name, offer.phone]
+    .filter(Boolean)
+    .map(escapeHtml)
+    .join(" · ");
+  const daysLeft = offer.dismissed_at
+    ? Math.max(
+        0,
+        30 -
+          Math.floor(
+            (Date.now() - new Date(offer.dismissed_at).getTime()) /
+              (1000 * 60 * 60 * 24),
+          ),
+      )
+    : null;
+  return `<div class="radarOffer muted" data-offer-id="${offer.id}">
+    <p><strong class="radarOfferPrice">${money(offer.item_price)}</strong> · ${shipping}</p>
+    <p class="sub">${contact}</p>
+    <p class="sub">${daysLeft !== null ? `יימחק בעוד ${daysLeft} ימים` : ""}</p>
+    <button class="ghost" data-restore-offer="${offer.id}">↺ בטל / החזר</button>
+  </div>`;
+}
+
+function dismissedBookCard(book, bookOffers) {
+  return `<article class="panel radarCard">
+    <div class="radarCardHead">
+      ${coverHtml(book)}
+      <div>
+        <h2>${escapeHtml(book.title)}</h2>
+        ${book.author ? `<p class="sub">${escapeHtml(book.author)}</p>` : ""}
+      </div>
+    </div>
+    ${bookOffers.map(dismissedOfferRow).join("")}
+  </article>`;
+}
+
 function render() {
   const offersByBook = new Map();
   for (const offer of offers) {
     if (!offersByBook.has(offer.book_id)) offersByBook.set(offer.book_id, []);
     offersByBook.get(offer.book_id).push(offer);
   }
+  // A book only gets an active card if it has at least one non-dismissed
+  // offer - otherwise a book whose single offer was just dismissed would
+  // show an empty card in the main list.
+  const hasNonDismissedOffer = (bookId) =>
+    (offersByBook.get(bookId) || []).some((offer) => offer.status !== "נדחתה");
   const activeCards = activeBooks
-    .filter((book) => offersByBook.has(book.id))
+    .filter((book) => hasNonDismissedOffer(book.id))
     .map((book) => bookCard(book, offersByBook.get(book.id), false))
     .join("");
   $("radarCards").innerHTML =
@@ -534,6 +630,21 @@ function render() {
     archivedCards ||
     '<div class="notice">אין עדיין ספרים שנרכשו דרך הרדאר.</div>';
   $("archiveToggle").classList.toggle("hidden", archivedBooks.length === 0);
+
+  const dismissedOffers = offers.filter((offer) => offer.status === "נדחתה");
+  const dismissedCards = dismissedBooksForDisplay
+    .map((book) =>
+      dismissedBookCard(
+        book,
+        (offersByBook.get(book.id) || []).filter(
+          (offer) => offer.status === "נדחתה",
+        ),
+      ),
+    )
+    .join("");
+  $("radarDismissed").innerHTML =
+    dismissedCards || '<div class="notice">אין הצעות שנדחו.</div>';
+  $("dismissedToggle").classList.toggle("hidden", dismissedOffers.length === 0);
 
   bindOfferActions();
   bindCoverZoom();
@@ -585,6 +696,39 @@ async function loadData() {
     archivedBooks = [];
   }
 
+  // Same reasoning as archivedBooks above: a dismissed offer's book might
+  // not be in activeBooks (status='מחפש') or archivedBooks (purchased) -
+  // for example if it was dismissed then the book status changed some
+  // other way. Fetched by id, no status filter, so the dismissed section
+  // always has a title/cover to show even in that edge case.
+  const archivedIds = new Set(archivedBooks.map((book) => book.id));
+  const dismissedBookIds = [
+    ...new Set(
+      offers
+        .filter((offer) => offer.status === "נדחתה")
+        .map((offer) => offer.book_id)
+        .filter((id) => !activeIds.has(id) && !archivedIds.has(id)),
+    ),
+  ];
+  const dismissedOnlyBooksResult = dismissedBookIds.length
+    ? await db
+        .from("books")
+        .select("id,title,author,status,cover")
+        .in("id", dismissedBookIds)
+    : { data: [] };
+  // Books already shown as active/archived cards double as the lookup
+  // for dismissed offers on those same books too - no need to fetch them
+  // twice.
+  dismissedBooksForDisplay = [
+    ...activeBooks,
+    ...archivedBooks,
+    ...(dismissedOnlyBooksResult.data || []),
+  ].filter((book) =>
+    offers.some(
+      (offer) => offer.book_id === book.id && offer.status === "נדחתה",
+    ),
+  );
+
   $("loading").classList.add("hidden");
   $("content").classList.remove("hidden");
   render();
@@ -613,6 +757,14 @@ $("archiveToggle").onclick = () => {
   )
     ? "הצג ספרים שנרכשו"
     : "הסתר ספרים שנרכשו";
+};
+$("dismissedToggle").onclick = () => {
+  $("radarDismissed").classList.toggle("hidden");
+  $("dismissedToggle").textContent = $("radarDismissed").classList.contains(
+    "hidden",
+  )
+    ? "הצג הצעות שנדחו"
+    : "הסתר הצעות שנדחו";
 };
 db.auth.getSession().then(({ data }) => showSession(data.session));
 db.auth.onAuthStateChange((event, session) => showSession(session));
