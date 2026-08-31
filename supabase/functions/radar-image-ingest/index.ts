@@ -35,12 +35,28 @@ async function anthropicApiKey(): Promise<string> {
   return (data as string | null) || "";
 }
 
+// This function is the only one in this project invoked directly from
+// the browser (radar.js calls db.functions.invoke, which does a real
+// cross-origin fetch from toxic2004.github.io to *.supabase.co) - every
+// other Edge Function here runs server-side via pg_cron, which has no
+// CORS concept at all. Missing this entirely is almost certainly why
+// uploads failed with no useful error: the browser's OPTIONS preflight
+// got a plain 405 with no CORS headers and silently blocked the real
+// request before it ever reached the code below.
+const CORS_HEADERS = {
+  "access-control-allow-origin": "*",
+  "access-control-allow-headers":
+    "authorization, x-client-info, apikey, content-type",
+  "access-control-allow-methods": "POST, OPTIONS",
+};
+
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
     headers: {
       "content-type": "application/json; charset=utf-8",
       "cache-control": "no-store",
+      ...CORS_HEADERS,
     },
   });
 }
@@ -53,6 +69,9 @@ const ALLOWED_MEDIA_TYPES = new Set([
 ]);
 
 Deno.serve(async (request) => {
+  if (request.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: CORS_HEADERS });
+  }
   if (request.method !== "POST") {
     return json({ error: "method not allowed" }, 405);
   }
