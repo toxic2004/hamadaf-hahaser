@@ -390,9 +390,18 @@ function ingestCardHtml(candidate, index) {
       : candidate.pickup_location && !candidate.pickup_approved
         ? `<p class="ingestWarning ingestWarningPickup">📍 אזור האיסוף לא ברשימת האזורים המתאימים לך - בדוק בעצמך אם זה נוח</p>`
         : "";
+  // Best-effort hint from the model's initial guess - re-checked with
+  // the live form values at save time too, since the user can still
+  // change the book/price/seller before saving.
+  const duplicateHint = duplicateWarningHtml(
+    candidate.book_id,
+    candidate.seller_name,
+    candidate.item_price,
+  );
   return `<div class="panel ingestCard" data-ingest-card="${index}">
     ${confidenceBadge(candidate.confidence)}
     ${bundleNote}
+    ${duplicateHint}
     <div class="field">
       <label>ספר</label>
       <select class="ingestBook">
@@ -444,6 +453,47 @@ function ingestSkeletonHtml() {
   </div>`;
 }
 
+// Section 8 of the spec: duplicate detection by book + seller + price
+// proximity, within a nearby time window. This runs entirely against
+// `offers` already loaded by loadData() - no extra DB round trip. Not a
+// hard block - the human still decides, same as every other review
+// step here; this only surfaces what a careful reader would notice
+// themselves, in case they don't.
+const DUPLICATE_CHECK_WINDOW_DAYS = 14;
+const DUPLICATE_CHECK_PRICE_TOLERANCE = 0.1; // 10%
+
+function findSimilarExistingOffers(bookId, sellerName, price) {
+  if (!bookId) return [];
+  const normalizedSeller = (sellerName || "").trim().toLowerCase();
+  const windowStart =
+    Date.now() - DUPLICATE_CHECK_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+  return offers.filter((offer) => {
+    if (offer.book_id !== bookId) return false;
+    if (new Date(offer.entered_at).getTime() < windowStart) return false;
+    const sameSeller =
+      normalizedSeller &&
+      (offer.seller_name || "").trim().toLowerCase() === normalizedSeller;
+    const priceClose =
+      Number.isFinite(price) &&
+      Number.isFinite(Number(offer.item_price)) &&
+      Math.abs(Number(offer.item_price) - price) <=
+        Math.max(1, price * DUPLICATE_CHECK_PRICE_TOLERANCE);
+    return sameSeller || priceClose;
+  });
+}
+
+function duplicateWarningHtml(bookId, sellerName, price) {
+  const matches = findSimilarExistingOffers(bookId, sellerName, price);
+  if (!matches.length) return "";
+  const summary = matches
+    .map(
+      (offer) =>
+        `${escapeHtml(offer.seller_name || "מוכר לא ידוע")} - ${money(offer.item_price)} (${formatDate(offer.entered_at)})`,
+    )
+    .join(", ");
+  return `<p class="ingestWarning ingestWarningDuplicate">🔁 כבר קיימת הצעה דומה לספר הזה: ${summary} - בדוק שזו לא אותה הצעה לפני שמירה</p>`;
+}
+
 function renderIngestResults() {
   $("ingestResults").innerHTML = pendingIngestCandidates
     .map((candidate, index) =>
@@ -470,9 +520,11 @@ async function saveIngestCandidate(index) {
   const card = document.querySelector(`[data-ingest-card="${index}"]`);
   if (!card) return;
   const message = card.querySelector(".ingestCardMessage");
+  const saveButton = card.querySelector("[data-save-ingest]");
   const bookId = card.querySelector(".ingestBook").value;
   const priceValue = card.querySelector(".ingestPrice").value;
   const shippingValue = card.querySelector(".ingestShipping").value;
+  const sellerValue = card.querySelector(".ingestSeller").value.trim();
   if (!bookId) {
     message.textContent = "יש לבחור ספר לפני השמירה.";
     return;
@@ -481,6 +533,20 @@ async function saveIngestCandidate(index) {
   if (!Number.isFinite(price) || price < 0 || priceValue === "") {
     message.textContent = "מחיר הוא שדה חובה ולא יכול להישאר ריק.";
     return;
+  }
+  // Re-checked here with the live form values (not just the model's
+  // initial guess shown when the card first rendered) - the user may
+  // have changed the book, price, or seller since. Not a hard block:
+  // one click shows the warning, a second click on the same button
+  // proceeds anyway - the human still makes the final call.
+  if (!saveButton.dataset.duplicateConfirmed) {
+    const duplicates = findSimilarExistingOffers(bookId, sellerValue, price);
+    if (duplicates.length) {
+      message.textContent =
+        "כבר קיימת הצעה דומה לספר הזה - לחץ שוב על 'שמור הצעה' כדי לשמור בכל זאת.";
+      saveButton.dataset.duplicateConfirmed = "true";
+      return;
+    }
   }
   message.textContent = "שומר...";
   const { error } = await db.from("manual_offers").insert({
@@ -513,6 +579,47 @@ $("ingestFile").onchange = () => {
     : "";
 };
 
+// Maps the specific error the function actually returned to a message
+// that tells the user (or whoever is debugging with them) something
+// real, instead of one generic "ניתוח נכשל" for every possible cause -
+// this exact gap made a real failure take three separate rounds to
+// diagnose earlier (auth, then CORS, then a stale key check) with
+// nothing but "it didn't work" to go on. supabase-js wraps a non-2xx
+// Edge Function response in error.context (the raw Response) rather
+// than surfacing the JSON body directly - has to be read out manually.
+async function describeIngestError(error) {
+  if (!error) return "הניתוח נכשל מסיבה לא ידועה. נסה שוב.";
+  let serverMessage = null;
+  try {
+    const body = await error.context?.json();
+    serverMessage = body?.error || null;
+  } catch {
+    // Response wasn't JSON, or context wasn't a Response at all (e.g. a
+    // real network failure before any HTTP response existed) - fall
+    // through to the generic messages below.
+  }
+  const status = error.context?.status;
+  if (status === 401) {
+    return "ההתחברות פגה. רענן את הדף והתחבר מחדש, ואז נסה שוב.";
+  }
+  if (serverMessage === "ANTHROPIC_API_KEY not configured") {
+    return "המערכת לא מוגדרת כרגע (חסר מפתח API בצד השרת). זו לא בעיה בתמונה שלך.";
+  }
+  if (serverMessage === "unsupported media_type") {
+    return "פורמט התמונה לא נתמך. נסה תמונה אחרת.";
+  }
+  if (serverMessage === "image too large") {
+    return "התמונה גדולה מדי. נסה תמונה קטנה יותר.";
+  }
+  if (status === 500 || status === 503) {
+    return "שגיאה בשרת. נסה שוב בעוד רגע, או שלח את התמונה לקלוד בצ'אט הרגיל.";
+  }
+  if (!status) {
+    return "בעיית תקשורת - בדוק את החיבור לאינטרנט ונסה שוב.";
+  }
+  return "הניתוח נכשל. נסה שוב או שלח את התמונה לקלוד בצ'אט הרגיל.";
+}
+
 // Deliberately a separate button rather than triggering on file
 // selection: the context-text field (added to close the "book name was
 // only in the surrounding chat message" gap) needs to be fillable
@@ -538,8 +645,7 @@ $("ingestAnalyzeButton").onclick = async () => {
     });
     if (error || !data?.ok) {
       $("ingestResults").innerHTML = "";
-      $("ingestStatus").textContent =
-        "הניתוח נכשל. נסה שוב או שלח את התמונה לקלוד בצ'אט הרגיל.";
+      $("ingestStatus").textContent = await describeIngestError(error);
       return;
     }
     if (!data.books?.length) {

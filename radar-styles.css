@@ -241,6 +241,10 @@
   background: #eaf2ff;
   color: #1c4e9c;
 }
+.ingestWarningDuplicate {
+  background: #f0e8ff;
+  color: #5a3a9c;
+}
 .ingestApproved {
   background: var(--green2);
   color: #0f6b53;
