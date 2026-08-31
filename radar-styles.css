@@ -42,6 +42,33 @@
      title/author text, not just a flat thumbnail. */
   box-shadow: 0 4px 10px rgba(34, 40, 59, 0.15);
 }
+.radarCoverZoomable {
+  cursor: zoom-in;
+  /* Prevents iOS Safari's long-press context menu (Save Image, Copy,
+     etc.) from popping up during the press-and-hold, which would
+     interrupt the zoom gesture and never fire pointerup cleanly. */
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: none;
+}
+.imageZoomOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 15, 20, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  cursor: zoom-out;
+}
+.imageZoomOverlay img {
+  max-width: 88vw;
+  max-height: 88vh;
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+}
 .radarCoverFallback {
   display: flex;
   align-items: center;
