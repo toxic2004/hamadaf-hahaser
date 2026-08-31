@@ -20,7 +20,7 @@
       rel="stylesheet"
     />
     <link rel="stylesheet" href="./dashboard.css?v=20260823-1" />
-    <link rel="stylesheet" href="./radar-styles.css?v=20260831-6" />
+    <link rel="stylesheet" href="./radar-styles.css?v=20260831-7" />
   </head>
   <body>
     <section id="authCard" class="authCard">
@@ -90,6 +90,10 @@
           הצג ספרים שנרכשו
         </button>
         <section id="radarArchive" class="hidden"></section>
+        <button id="dismissedToggle" class="ghost hidden">
+          הצג הצעות שנדחו
+        </button>
+        <section id="radarDismissed" class="hidden"></section>
       </section>
     </main>
     <div
@@ -101,6 +105,6 @@
     </div>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.110.9"></script>
     <script src="./supabase-client.js"></script>
-    <script src="./radar.js?v=20260831-6"></script>
+    <script src="./radar.js?v=20260831-7"></script>
   </body>
 </html>
