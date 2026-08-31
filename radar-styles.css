@@ -1,8 +1,45 @@
 .radarCard {
   margin-bottom: 14px;
 }
-.radarCard h2 {
+.radarCardHead {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: 4px;
+}
+.radarCardHead h2 {
   margin: 0 0 2px;
+}
+.radarCover {
+  width: 56px;
+  height: 80px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  flex-shrink: 0;
+  background: var(--card);
+}
+.radarCoverFallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-weight: 700;
+  color: var(--muted);
+  font-size: 12px;
+  padding: 4px;
+}
+.radarCard.archived {
+  opacity: 0.85;
+}
+.radarCard .badge {
+  display: inline-block;
+  background: var(--teal);
+  color: white;
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 12px;
+  font-weight: 700;
 }
 .radarOffer {
   border: 1px solid var(--line);
@@ -24,4 +61,32 @@
 }
 .radarOffer button {
   margin-top: 6px;
+}
+.purchaseForm {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--line);
+}
+.purchaseForm .field {
+  margin-bottom: 8px;
+}
+.purchaseForm .field label {
+  display: block;
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 2px;
+}
+.purchaseForm input {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 10px;
+}
+.purchaseFormActions {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+#archiveToggle {
+  margin: 10px 0;
 }
