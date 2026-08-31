@@ -38,6 +38,9 @@
   border: 1px solid var(--line);
   flex-shrink: 0;
   background: var(--card);
+  /* Small lift so the cover reads as a distinct object next to the
+     title/author text, not just a flat thumbnail. */
+  box-shadow: 0 4px 10px rgba(34, 40, 59, 0.15);
 }
 .radarCoverFallback {
   display: flex;
@@ -78,6 +81,23 @@
 }
 .radarOffer p {
   margin: 2px 0;
+}
+/* The total price is the single number the user is meant to compare
+   across offers - deliberately larger and in the accent color instead
+   of blending into the same size as everything else in the row. */
+.radarOfferPrice {
+  font-size: 19px;
+  color: var(--green);
+}
+.cheapestBadge {
+  display: inline-block;
+  background: var(--gold);
+  color: var(--ink);
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 12px;
+  font-weight: 800;
+  margin-bottom: 6px;
 }
 
 /* Card-level "קניתי" - one per book, not per competing offer, so it's
@@ -161,13 +181,71 @@
   margin-top: 12px;
 }
 .ingestWarning {
-  background: #fff4d6;
-  color: #8a6100;
   border-radius: 10px;
   padding: 8px 12px;
   font-size: 13px;
   font-weight: 600;
   margin: 0 0 10px;
+}
+/* Three warning types get their own color instead of all looking
+   identical - a "not sure this is the right book" mismatch and a
+   "pickup area isn't on your approved list" note are different kinds
+   of caution and shouldn't blur together at a glance. */
+.ingestWarningConfidence {
+  background: #fff4d6;
+  color: #8a6100;
+}
+.ingestWarningBundle {
+  background: #ffe3ea;
+  color: #9c1c3a;
+}
+.ingestWarningPickup {
+  background: #eaf2ff;
+  color: #1c4e9c;
+}
+.ingestApproved {
+  background: var(--green2);
+  color: #0f6b53;
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0 0 10px;
+}
+/* Skeleton shown while an upload is being analyzed - plain animated
+   bars, no real data, replaced entirely once a response comes back. */
+.ingestSkeleton {
+  overflow: hidden;
+}
+.skeletonLine {
+  height: 14px;
+  border-radius: 7px;
+  margin: 10px 0;
+  background: linear-gradient(
+    90deg,
+    var(--line) 25%,
+    #f8f2dd 37%,
+    var(--line) 63%
+  );
+  background-size: 400% 100%;
+  animation: skeletonShimmer 1.4s ease infinite;
+}
+.skeletonLine60 {
+  width: 60%;
+}
+.skeletonLine40 {
+  width: 40%;
+}
+.skeletonLine80 {
+  width: 80%;
+}
+@keyframes skeletonShimmer {
+  0% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0 50%;
+  }
 }
 #ingestFile {
   display: block;

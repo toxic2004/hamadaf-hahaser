@@ -81,7 +81,7 @@ function purchaseFormHtml(offer) {
   </div>`;
 }
 
-function offerRow(offer) {
+function offerRow(offer, isCheapest) {
   const isPurchased = offer.status === "נקנתה";
   const shippingKnown =
     offer.shipping_price !== null && offer.shipping_price !== undefined;
@@ -101,8 +101,15 @@ function offerRow(offer) {
   const purchasedNote = isPurchased
     ? `<p class="sub">נקנה ${formatDate(offer.purchased_at)}${offer.purchased_from ? " מ" + escapeHtml(offer.purchased_from) : ""} ב${money(offer.purchased_price) || "לא ידוע"}</p>`
     : "";
+  // Purely visual - the cheapest active offer is already sorted first,
+  // this just labels it. Doesn't change ranking or any saved data.
+  const cheapestBadge =
+    isCheapest && offer.status === "פעילה"
+      ? `<span class="cheapestBadge">🏆 הזול ביותר</span>`
+      : "";
   return `<div class="radarOffer${offer.status !== "פעילה" ? " muted" : ""}${isPurchased ? " purchased" : ""}" data-offer-id="${offer.id}">
-    <p><strong>${money(offer.item_price)}</strong> · ${shipping}${total}</p>
+    ${cheapestBadge}
+    <p><strong class="radarOfferPrice">${money(offer.item_price)}</strong> · ${shipping}${total}</p>
     <p class="sub">${contact}${pickup}</p>
     <p class="sub">הוזן ${formatDate(offer.entered_at)} · ${escapeHtml(offer.status)}</p>
     ${purchasedNote}
@@ -142,6 +149,10 @@ function bookCard(book, bookOffers, isArchived) {
     (a, b) => Number(a.item_price) - Number(b.item_price),
   );
   const activeOffers = sorted.filter((offer) => offer.status === "פעילה");
+  // Only meaningful with real competition - one offer being "the cheapest"
+  // among itself isn't worth a badge.
+  const cheapestActiveId =
+    activeOffers.length > 1 ? activeOffers[0]?.id : undefined;
   return `<article class="panel radarCard${isArchived ? " archived" : ""}">
     <div class="radarCardHead">
       ${coverHtml(book)}
@@ -151,7 +162,7 @@ function bookCard(book, bookOffers, isArchived) {
         ${isArchived ? '<span class="badge">נרכש</span>' : ""}
       </div>
     </div>
-    ${sorted.map(offerRow).join("")}
+    ${sorted.map((offer) => offerRow(offer, offer.id === cheapestActiveId)).join("")}
     ${isArchived ? "" : buyControlHtml(book, activeOffers)}
   </article>`;
 }
@@ -278,7 +289,7 @@ function fileToBase64(file) {
 function confidenceBadge(confidence) {
   if (confidence === "high") return "";
   const label = confidence === "low" ? "התאמה לא ודאית" : "לא זוהתה התאמה";
-  return `<p class="ingestWarning">⚠️ ${label} - בדוק ובחר את הספר הנכון</p>`;
+  return `<p class="ingestWarning ingestWarningConfidence">⚠️ ${label} - בדוק ובחר את הספר הנכון</p>`;
 }
 
 function bookOptionsHtml(selectedId) {
@@ -292,13 +303,13 @@ function bookOptionsHtml(selectedId) {
 
 function ingestCardHtml(candidate, index) {
   const bundleNote = candidate.bundle_note
-    ? `<p class="ingestWarning">⚠️ ${escapeHtml(candidate.bundle_note)}</p>`
+    ? `<p class="ingestWarning ingestWarningBundle">📦 ${escapeHtml(candidate.bundle_note)}</p>`
     : "";
   const pickupApprovedNote =
     candidate.pickup_location && candidate.pickup_approved
-      ? `<p class="sub">✓ אזור איסוף מוכר כמתאים</p>`
+      ? `<p class="ingestApproved">✓ אזור איסוף מוכר כמתאים</p>`
       : candidate.pickup_location && !candidate.pickup_approved
-        ? `<p class="ingestWarning">⚠️ אזור האיסוף לא ברשימת האזורים המתאימים לך - בדוק בעצמך אם זה נוח</p>`
+        ? `<p class="ingestWarning ingestWarningPickup">📍 אזור האיסוף לא ברשימת האזורים המתאימים לך - בדוק בעצמך אם זה נוח</p>`
         : "";
   return `<div class="panel ingestCard" data-ingest-card="${index}">
     ${confidenceBadge(candidate.confidence)}
@@ -341,6 +352,18 @@ function ingestCardHtml(candidate, index) {
 }
 
 let pendingIngestCandidates = [];
+
+// Shown while the image is uploading/being analyzed - purely visual
+// feedback, replaced entirely by renderIngestResults() (or cleared on
+// error/no-match) once the real response comes back. Never contains
+// real data, so no escaping/validation concerns.
+function ingestSkeletonHtml() {
+  return `<div class="panel ingestCard ingestSkeleton" aria-hidden="true">
+    <div class="skeletonLine skeletonLine60"></div>
+    <div class="skeletonLine skeletonLine40"></div>
+    <div class="skeletonLine skeletonLine80"></div>
+  </div>`;
+}
 
 function renderIngestResults() {
   $("ingestResults").innerHTML = pendingIngestCandidates
@@ -421,7 +444,7 @@ $("ingestAnalyzeButton").onclick = async () => {
   if (!file) return;
   const contextText = $("ingestContextText").value.trim();
   $("ingestStatus").textContent = "מעבד תמונה...";
-  $("ingestResults").innerHTML = "";
+  $("ingestResults").innerHTML = ingestSkeletonHtml();
   pendingIngestCandidates = [];
   try {
     const normalized = await normalizeImageToJpeg(file);
@@ -435,11 +458,13 @@ $("ingestAnalyzeButton").onclick = async () => {
       },
     });
     if (error || !data?.ok) {
+      $("ingestResults").innerHTML = "";
       $("ingestStatus").textContent =
         "הניתוח נכשל. נסה שוב או שלח את התמונה לקלוד בצ'אט הרגיל.";
       return;
     }
     if (!data.books?.length) {
+      $("ingestResults").innerHTML = "";
       $("ingestStatus").textContent = "לא זוהה בתמונה ספר מרשימת החיפוש שלך.";
       return;
     }
@@ -448,6 +473,7 @@ $("ingestAnalyzeButton").onclick = async () => {
     pendingIngestCandidates = data.books;
     renderIngestResults();
   } catch {
+    $("ingestResults").innerHTML = "";
     $("ingestStatus").textContent =
       "לא ניתן היה לקרוא את הקובץ הזה כתמונה. נסה קובץ אחר, או שלח לקלוד בצ'אט הרגיל.";
   } finally {
