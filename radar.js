@@ -82,7 +82,6 @@ function purchaseFormHtml(offer) {
 }
 
 function offerRow(offer) {
-  const isActive = offer.status === "פעילה";
   const isPurchased = offer.status === "נקנתה";
   const shippingKnown =
     offer.shipping_price !== null && offer.shipping_price !== undefined;
@@ -102,15 +101,39 @@ function offerRow(offer) {
   const purchasedNote = isPurchased
     ? `<p class="sub">נקנה ${formatDate(offer.purchased_at)}${offer.purchased_from ? " מ" + escapeHtml(offer.purchased_from) : ""} ב${money(offer.purchased_price) || "לא ידוע"}</p>`
     : "";
-  const button = isActive
-    ? `<button class="ghost" data-start-purchase="${offer.id}">קניתי</button>`
-    : "";
-  return `<div class="radarOffer${isActive ? "" : " muted"}${isPurchased ? " purchased" : ""}" data-offer-id="${offer.id}">
+  return `<div class="radarOffer${offer.status !== "פעילה" ? " muted" : ""}${isPurchased ? " purchased" : ""}" data-offer-id="${offer.id}">
     <p><strong>${money(offer.item_price)}</strong> · ${shipping}${total}</p>
     <p class="sub">${contact}${pickup}</p>
     <p class="sub">הוזן ${formatDate(offer.entered_at)} · ${escapeHtml(offer.status)}</p>
     ${purchasedNote}
-    ${button}
+  </div>`;
+}
+
+// One book = one purchase, even when several sellers are competing for
+// it - a "קניתי" button per offer implied buying every offer separately,
+// which isn't the intent. This renders exactly one buy control per card:
+// straight to the purchase form when there's only one active offer to
+// pick from, or a small seller picker first when there's more than one.
+function buyControlHtml(book, activeOffers) {
+  if (!activeOffers.length) return "";
+  if (activeOffers.length === 1) {
+    return `<div class="radarBuyWrap" data-buy-wrap="${book.id}">
+      <button class="radarBuyButton" data-start-purchase="${activeOffers[0].id}">✓ קניתי</button>
+    </div>`;
+  }
+  const options = activeOffers
+    .map(
+      (offer) =>
+        `<option value="${offer.id}">${escapeHtml(offer.seller_name || "מוכר")} - ${money(offer.item_price)}</option>`,
+    )
+    .join("");
+  return `<div class="radarBuyWrap" data-buy-wrap="${book.id}">
+    <button class="radarBuyButton" data-open-picker="${book.id}">✓ קניתי</button>
+    <div class="offerPicker hidden" data-offer-picker="${book.id}">
+      <label>מאיזו הצעה קנית?</label>
+      <select class="offerPickerSelect">${options}</select>
+      <button class="ghost" data-confirm-picker="${book.id}">המשך</button>
+    </div>
   </div>`;
 }
 
@@ -118,6 +141,7 @@ function bookCard(book, bookOffers, isArchived) {
   const sorted = [...bookOffers].sort(
     (a, b) => Number(a.item_price) - Number(b.item_price),
   );
+  const activeOffers = sorted.filter((offer) => offer.status === "פעילה");
   return `<article class="panel radarCard${isArchived ? " archived" : ""}">
     <div class="radarCardHead">
       ${coverHtml(book)}
@@ -128,20 +152,38 @@ function bookCard(book, bookOffers, isArchived) {
       </div>
     </div>
     ${sorted.map(offerRow).join("")}
+    ${isArchived ? "" : buyControlHtml(book, activeOffers)}
   </article>`;
+}
+
+function startPurchaseFor(offerId, container) {
+  const offer = offers.find((item) => item.id === offerId);
+  if (!offer) return;
+  if (container.querySelector(".purchaseForm")) return;
+  container.insertAdjacentHTML("beforeend", purchaseFormHtml(offer));
+  bindPurchaseFormActions(container);
 }
 
 function bindOfferActions() {
   document.querySelectorAll("[data-start-purchase]").forEach((button) => {
     button.onclick = () => {
-      const offer = offers.find(
-        (item) => item.id === button.dataset.startPurchase,
-      );
-      if (!offer) return;
-      const row = button.closest(".radarOffer");
-      if (row.querySelector(".purchaseForm")) return;
-      row.insertAdjacentHTML("beforeend", purchaseFormHtml(offer));
-      bindPurchaseFormActions(row);
+      const wrap = button.closest(".radarBuyWrap");
+      startPurchaseFor(button.dataset.startPurchase, wrap);
+    };
+  });
+  document.querySelectorAll("[data-open-picker]").forEach((button) => {
+    button.onclick = () => {
+      const wrap = button.closest(".radarBuyWrap");
+      wrap.querySelector(".offerPicker")?.classList.remove("hidden");
+      button.classList.add("hidden");
+    };
+  });
+  document.querySelectorAll("[data-confirm-picker]").forEach((button) => {
+    button.onclick = () => {
+      const wrap = button.closest(".radarBuyWrap");
+      const offerId = wrap.querySelector(".offerPickerSelect").value;
+      wrap.querySelector(".offerPicker")?.remove();
+      startPurchaseFor(offerId, wrap);
     };
   });
 }
