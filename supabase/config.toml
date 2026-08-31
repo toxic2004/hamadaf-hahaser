@@ -3,3 +3,9 @@ verify_jwt = false
 
 [functions.rebooks-simple-scan]
 verify_jwt = false
+
+[functions.radar-quiet-check]
+verify_jwt = false
+
+[functions.radar-image-ingest]
+verify_jwt = true
