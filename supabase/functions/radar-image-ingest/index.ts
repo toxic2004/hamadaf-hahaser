@@ -118,6 +118,13 @@ Deno.serve(async (request) => {
       typeof body.image_base64 === "string" ? body.image_base64 : "";
     const mediaType =
       typeof body.media_type === "string" ? body.media_type : "";
+    // Optional - free text the user typed alongside the image (e.g. the
+    // chat message that surrounded the screenshot). Capped generously;
+    // this isn't meant for pasting entire conversation threads.
+    const contextText =
+      typeof body.context_text === "string"
+        ? body.context_text.slice(0, 2000)
+        : undefined;
     if (!imageBase64) return json({ error: "image_base64 is required" }, 400);
     if (!ALLOWED_MEDIA_TYPES.has(mediaType)) {
       return json({ error: "unsupported media_type" }, 400);
@@ -152,6 +159,7 @@ Deno.serve(async (request) => {
       apiKey,
       imageBase64,
       mediaType,
+      contextText,
       books: books || [],
     });
 
