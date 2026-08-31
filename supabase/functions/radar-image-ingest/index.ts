@@ -12,7 +12,6 @@ import { extractOffersFromImage } from "./extraction-core.mjs";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
-const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") || "";
 
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024; // 8MB, comfortably under Claude's image limits
 
@@ -76,24 +75,37 @@ Deno.serve(async (request) => {
     return json({ error: "method not allowed" }, 405);
   }
   try {
-    // Real end-user auth (this is invoked from the browser by the
-    // logged-in user, not by pg_cron with a shared secret) - same
-    // pattern as processOfferMode in supabase/functions/alerts/index.ts.
+    // Real end-user auth. Previously created a *separate* client using
+    // SUPABASE_ANON_KEY to call auth.getUser() - removed after live
+    // debugging (2026-08-31) showed every real browser attempt failing
+    // with a clean 401 and nothing in function_logs, meaning it wasn't
+    // crashing, it was cleanly deciding "not authorized". This project's
+    // client uses the newer sb_publishable_... key format
+    // (supabase-client.js), while SUPABASE_ANON_KEY is the legacy JWT
+    // env var some platforms still auto-inject - a real risk of it being
+    // stale, empty, or mismatched under the newer key system, which
+    // would make a *separate* anon-key client fail to validate a
+    // perfectly good user session token.
+    //
+    // Fixed by validating the token directly through the existing
+    // service-role client instead: service().auth.getUser(token) checks
+    // the JWT's signature/claims without needing any second client or
+    // any anon/publishable key at all.
     const authorization = request.headers.get("authorization") || "";
     if (!authorization.toLowerCase().startsWith("bearer ")) {
+      console.error("radar-image-ingest: no bearer token in request");
       return json({ error: "unauthorized" }, 401);
     }
-    if (!SUPABASE_URL || !ANON_KEY) {
-      throw new Error("Missing required Supabase authentication configuration");
-    }
-    const userClient = createClient(SUPABASE_URL, ANON_KEY, {
-      global: { headers: { authorization } },
-      auth: { persistSession: false },
-    });
+    const token = authorization.slice("bearer ".length);
     const { data: authData, error: authError } =
-      await userClient.auth.getUser();
-    if (authError || !authData.user)
+      await service().auth.getUser(token);
+    if (authError || !authData.user) {
+      console.error(
+        "radar-image-ingest: token rejected",
+        authError?.message || "no user on token",
+      );
       return json({ error: "unauthorized" }, 401);
+    }
     const userId = authData.user.id;
 
     let body: Record<string, unknown>;
@@ -125,10 +137,14 @@ Deno.serve(async (request) => {
       .select("id,title,author")
       .eq("user_id", userId)
       .eq("status", "מחפש");
-    if (booksError) throw booksError;
+    if (booksError) {
+      console.error("radar-image-ingest: books query failed", booksError);
+      throw booksError;
+    }
 
     const apiKey = await anthropicApiKey();
     if (!apiKey) {
+      console.error("radar-image-ingest: ANTHROPIC_API_KEY not configured");
       return json({ error: "ANTHROPIC_API_KEY not configured" }, 503);
     }
 
