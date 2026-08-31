@@ -1,6 +1,26 @@
 .radarCard {
   margin-bottom: 14px;
 }
+/* .sourceLinks base styling lives in price-styles.css, which radar.html
+   doesn't load (it's price-page-specific) - dashboard.css only has a
+   mobile-width media-query override for it, not the actual button look.
+   Duplicated here rather than pulling in all of price-styles.css. */
+.sourceLinks {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 14px 0;
+}
+.sourceLinks a {
+  background: white;
+  border: 1px solid var(--line);
+  color: var(--ink);
+  border-radius: 14px;
+  padding: 10px 12px;
+  text-decoration: none;
+  box-shadow: var(--shadow);
+  font-weight: 600;
+}
 .radarCardHead {
   display: flex;
   gap: 12px;
