@@ -224,16 +224,6 @@
       storageScript.onerror = function () {
         showLoadError("רכיב שמירת הכריכות לא נטען. נסה לרענן את הדף");
       };
-      storageScript.onload = function () {
-        const migrationScript = document.createElement("script");
-        migrationScript.src = "./migrate-one-cover.js?v=all-covers-20260729-2";
-        migrationScript.async = false;
-        migrationScript.dataset.hamadafAllCoverMigration = "true";
-        migrationScript.onerror = function () {
-          console.error("Full cover migration script failed to load");
-        };
-        document.head.appendChild(migrationScript);
-      };
       document.head.appendChild(storageScript);
     })
     .catch(function (error) {
