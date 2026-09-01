@@ -1085,6 +1085,122 @@ export async function scanBookOnRebooks(
 // it can never be faked the way the "מי הזיז את הגבינה שלי" bug did
 // (shipping_price: 0 to force a total under 30 ₪ without an approved
 // pickup branch).
+// Second source added to the scan pipeline (2026-08-31), after Rebooks.
+// Mirrors scanBookOnRebooks' shape exactly (same two-step search-then-
+// enrich structure) but Evrit's search results page never carries price/
+// availability at all - classifySearchResponse's "evrit" branch already
+// returns exactly one offer per match with itemPrice/availabilityStatus
+// both null, precisely so this function has something to enrich the
+// same way Rebooks' offers get their shipping enriched from the product
+// page. Live-verified against the real site on 2026-08-31 (not just the
+// 2026-08-16 fixtures): fetched https://www.e-vrit.co.il/Product/9199/
+// directly and confirmed the exact "מודפס" + "₪76.8" text pattern
+// extractEvritProductDetails looks for is still present verbatim.
+export async function scanBookOnEvrit(
+  book,
+  { fetchImpl = fetch, timeoutMs = 6_000 } = {},
+) {
+  const plan = sourcePlan("evrit", book);
+  if (!plan.searchUrl) {
+    return { status: "unavailable", note: plan.note || null, offers: [] };
+  }
+  let response;
+  try {
+    response = await fetchImpl(plan.searchUrl, {
+      method: "GET",
+      redirect: "follow",
+      headers: {
+        accept:
+          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.7",
+        "accept-language": "he-IL,he;q=0.9,en-US;q=0.6,en;q=0.5",
+        "user-agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+      },
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (error) {
+    return {
+      status: "temporary_error",
+      note: `שגיאת רשת בפנייה למקור: ${String(error?.message || error)}`,
+      offers: [],
+    };
+  }
+  const body = await response.text().catch(() => "");
+  const classified = classifySearchResponse({
+    sourceId: "evrit",
+    title: book.title,
+    status: response.status,
+    contentType: response.headers.get("content-type") || "",
+    body,
+  });
+  if (classified.status !== "found" || !classified.offers?.length) {
+    return { status: classified.status, note: classified.note, offers: [] };
+  }
+  const enriched = [];
+  for (const offer of classified.offers) {
+    // Search-result links can be relative ("/Product/9199/...") - must
+    // be resolved against the site's base URL before fetching, and the
+    // resolved absolute URL is what should end up stored, not the
+    // relative fragment (a relative path saved to price_offers.source_url
+    // wouldn't be a usable link for the person reading the report).
+    let absoluteUrl;
+    try {
+      absoluteUrl = new URL(
+        offer.sourceUrl,
+        "https://www.e-vrit.co.il",
+      ).toString();
+    } catch {
+      continue;
+    }
+    let productResponse;
+    try {
+      productResponse = await fetchImpl(absoluteUrl, {
+        method: "GET",
+        redirect: "follow",
+        headers: {
+          accept:
+            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.7",
+          "accept-language": "he-IL,he;q=0.9,en-US;q=0.6,en;q=0.5",
+          "user-agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+        },
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+    } catch {
+      continue; // Product page unreachable - drop this offer rather than guess.
+    }
+    if (!productResponse.ok) continue;
+    const productBody = await productResponse.text();
+    const details = extractEvritProductDetails(productBody);
+    if (!details) continue; // No printed edition found on this page - not a print offer.
+    const shipping = evritShipping();
+    enriched.push({
+      ...offer,
+      sourceUrl: absoluteUrl,
+      sourceListingKey: absoluteUrl,
+      itemPrice: details.itemPrice,
+      availabilityStatus: details.availabilityStatus,
+      shippingKnown: Boolean(shipping),
+      shippingPrice: shipping ? shipping.price : null,
+      shippingPickupPrice: shipping ? shipping.allOptions.pickupPrice : null,
+      shippingPickupApproved: shipping
+        ? shipping.allOptions.pickupApproved
+        : null,
+      shippingDistributionPrice: shipping
+        ? shipping.allOptions.distributionPrice
+        : null,
+      shippingCourierPrice: shipping ? shipping.allOptions.courierPrice : null,
+    });
+  }
+  return {
+    status: enriched.length ? "found" : "manual_required",
+    note: enriched.length
+      ? classified.note
+      : "נמצא קישור לדף המוצר, אך לא ניתן היה לאמת מחיר ומלאי בפועל.",
+    offers: enriched,
+  };
+}
+
 export function buildPriceOfferPayload(book, offer, now = new Date()) {
   return {
     user_id: book.user_id,
