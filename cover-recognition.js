@@ -253,15 +253,37 @@
     setCoverMessage("מזהה את הספר לפי הכריכה...");
     setProgress(10);
 
+    // Below this, the model itself is signaling low confidence - real
+    // logs (2026-09-02, "תולדות האנושות" cover) showed it will still
+    // return a plausible-looking but garbled/wrong guess at ~0.3
+    // confidence instead of an empty candidates array, even though the
+    // prompt asks it to return empty when unsure. Rather than trust the
+    // prompt alone to prevent that, gate on confidence here too: below
+    // the threshold we tell the person honestly that identification
+    // wasn't confident enough, instead of presenting a fabricated title
+    // as if it were a real match and burning a Google Books search on
+    // text that seemed close enough to look real, but usually is not.
+    const MIN_CONFIDENCE = 0.5;
+
     try {
       const visualCandidates = await recognizeVisually(file);
       setProgress(65);
       if (visualCandidates.length) {
         const best = visualCandidates[0];
+        const confidence = Math.round(best.confidence * 100);
+        if (best.confidence < MIN_CONFIDENCE) {
+          $("coverOcrText").value = "";
+          setCoverMessage(
+            "לא הצלחתי לזהות את הספר בביטחון מספיק (" +
+              confidence +
+              "%). אפשר להזין ידנית שם ספר ומחבר למטה וללחוץ על \"חיפוש מחדש\".",
+            true,
+          );
+          return;
+        }
         $("coverOcrText").value = [best.title, best.author]
           .filter(Boolean)
           .join("\n");
-        const confidence = Math.round(best.confidence * 100);
         setCoverMessage(
           "זוהה: " +
             best.title +
