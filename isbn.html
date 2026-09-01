@@ -280,7 +280,7 @@
         </div>
         <a class="button ghost back" href="./" aria-label="חזרה לעמוד הראשי"
           >← חזרה למדף</a
-        >
+        ><button id="logout" class="ghost hidden">יציאה</button>
       </header>
       <section id="authCard" class="card auth">
         <h2>כניסה לחשבון</h2>
@@ -308,7 +308,6 @@
             <h2>איתור לפי ISBN</h2>
             <div id="account" class="sub"></div>
           </div>
-          <button id="logout" class="ghost">יציאה</button>
         </div>
         <p class="sub">
           אפשר לסרוק את הברקוד במצלמה או להזין את המספר המודפס לידו.
@@ -536,6 +535,7 @@
         user = (session && session.user) || null;
         $("authCard").classList.toggle("hidden", !!user);
         $("appCard").classList.toggle("hidden", !user);
+        $("logout").classList.toggle("hidden", !user);
         if (user) $("account").textContent = "מחובר כ " + user.email;
       }
       $("login").onclick = async () => {
