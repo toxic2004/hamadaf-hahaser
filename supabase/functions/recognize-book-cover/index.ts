@@ -1,4 +1,16 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { createClient } from "npm:@supabase/supabase-js@2.110.9";
+
+// Switched from OpenAI (gpt-5-mini) to Claude (claude-haiku-4-5-20251001)
+// on 2026-09-02 after the OpenAI account ran out of credits (429
+// insufficient_quota / credit_balance_exhausted, confirmed in
+// function_logs). Mirrors the exact working Anthropic call pattern
+// already proven in supabase/functions/radar-image-ingest
+// (extraction-core.mjs): same endpoint, same header shape, same
+// get_anthropic_api_key() RPC pulling the key from Supabase Vault - no
+// new key or secret needed. The request/response contract with the
+// browser (imageDataUrl in, {candidates:[...]} out) is unchanged, so
+// cover-recognition.js required no changes.
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -13,15 +25,26 @@ function json(body: unknown, status = 200) {
   });
 }
 
-function extractOutputText(payload: any): string {
-  if (typeof payload?.output_text === "string") return payload.output_text;
-  const parts: string[] = [];
-  for (const item of payload?.output || []) {
-    for (const content of item?.content || []) {
-      if (typeof content?.text === "string") parts.push(content.text);
-    }
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
+const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+
+let serviceClient: ReturnType<typeof createClient> | null = null;
+function service() {
+  if (!SUPABASE_URL || !SERVICE_KEY) {
+    throw new Error("Missing required Supabase service configuration");
   }
-  return parts.join("\n");
+  if (!serviceClient) {
+    serviceClient = createClient(SUPABASE_URL, SERVICE_KEY, {
+      auth: { persistSession: false },
+    });
+  }
+  return serviceClient;
+}
+
+async function anthropicApiKey(): Promise<string> {
+  const { data, error } = await service().rpc("get_anthropic_api_key");
+  if (error) throw error;
+  return (data as string | null) || "";
 }
 
 function parseJsonObject(text: string): any {
@@ -31,6 +54,17 @@ function parseJsonObject(text: string): any {
     .replace(/\s*```$/, "");
   return JSON.parse(cleaned);
 }
+
+const PROMPT = [
+  "זהה את הספר שבתמונת הכריכה.",
+  "המטרה היא לזהות את זהות הספר, לא לתמלל את כל הטקסט.",
+  "התעלם מהמלצות, ציטוטים, מדבקות מחיר, שם ההוצאה וטקסט שיווקי.",
+  "החזר JSON בלבד ובדיוק במבנה הבא, ללא טקסט נוסף לפני או אחרי:",
+  '{"candidates":[{"title":"שם הספר","author":"שם המחבר","language":"he","confidence":0.0,"reason":"הסבר קצר"}]}',
+  "החזר אפשרות אחת כשאתה בטוח, ועד שלוש אפשרויות במקרה של ספק.",
+  "confidence חייב להיות מספר בין 0 ל-1.",
+  "אל תמציא. אם לא ניתן לזהות, החזר candidates כמערך ריק.",
+].join("\n");
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -47,40 +81,38 @@ Deno.serve(async (req: Request) => {
     if (!match) return json({ error: "סוג התמונה אינו נתמך." }, 400);
     if (match[2].length > 9_000_000) return json({ error: "התמונה גדולה מדי." }, 413);
 
-    const apiKey = Deno.env.get("OPENAI_API_KEY");
-    if (!apiKey) return json({ error: "מפתח שירות הזיהוי אינו מוגדר." }, 500);
+    const mediaType = match[1];
+    const imageBase64 = match[2];
+
+    const apiKey = await anthropicApiKey();
+    if (!apiKey) {
+      console.error("recognize-book-cover: ANTHROPIC_API_KEY not configured");
+      return json({ error: "מפתח שירות הזיהוי אינו מוגדר." }, 500);
+    }
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 45_000);
 
-    const openAIResponse = await fetch("https://api.openai.com/v1/responses", {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       signal: controller.signal,
       headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
+        "content-type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "gpt-5-mini",
-        store: false,
-        input: [
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 1024,
+        messages: [
           {
             role: "user",
             content: [
               {
-                type: "input_text",
-                text: [
-                  "זהה את הספר שבתמונת הכריכה.",
-                  "המטרה היא לזהות את זהות הספר, לא לתמלל את כל הטקסט.",
-                  "התעלם מהמלצות, ציטוטים, מדבקות מחיר, שם ההוצאה וטקסט שיווקי.",
-                  "החזר JSON בלבד ובדיוק במבנה הבא:",
-                  '{"candidates":[{"title":"שם הספר","author":"שם המחבר","language":"he","confidence":0.0,"reason":"הסבר קצר"}]}',
-                  "החזר אפשרות אחת כשאתה בטוח, ועד שלוש אפשרויות במקרה של ספק.",
-                  "confidence חייב להיות מספר בין 0 ל-1.",
-                  "אל תמציא. אם לא ניתן לזהות, החזר candidates כמערך ריק.",
-                ].join("\n"),
+                type: "image",
+                source: { type: "base64", media_type: mediaType, data: imageBase64 },
               },
-              { type: "input_image", image_url: imageDataUrl, detail: "high" },
+              { type: "text", text: PROMPT },
             ],
           },
         ],
@@ -88,18 +120,26 @@ Deno.serve(async (req: Request) => {
     });
     clearTimeout(timeout);
 
-    const payload = await openAIResponse.json();
-    if (!openAIResponse.ok) {
-      console.error("OpenAI error", openAIResponse.status, payload);
-      const message = payload?.error?.message || "שירות הזיהוי החזותי נכשל.";
-      return json({ error: message }, openAIResponse.status >= 500 ? 502 : 400);
+    if (!response.ok) {
+      const bodyText = await response.text().catch(() => "");
+      console.error("Anthropic error", response.status, bodyText);
+      return json({ error: "שירות הזיהוי החזותי נכשל." }, response.status >= 500 ? 502 : 400);
+    }
+
+    const payload = await response.json();
+    const textBlock = (payload.content || []).find(
+      (block: any) => block?.type === "text",
+    );
+    if (!textBlock) {
+      console.error("No text block in Anthropic response", payload);
+      return json({ error: "שירות הזיהוי החזיר תשובה לא תקינה." }, 502);
     }
 
     let parsed: any;
     try {
-      parsed = parseJsonObject(extractOutputText(payload));
+      parsed = parseJsonObject(textBlock.text);
     } catch (error) {
-      console.error("Could not parse model output", error, extractOutputText(payload));
+      console.error("Could not parse model output", error, textBlock.text);
       return json({ error: "שירות הזיהוי החזיר תשובה לא תקינה." }, 502);
     }
 
@@ -119,9 +159,10 @@ Deno.serve(async (req: Request) => {
     return json({ candidates });
   } catch (error) {
     console.error("recognize-book-cover failed", error);
-    const message = error instanceof DOMException && error.name === "AbortError"
-      ? "הזיהוי ארך זמן רב מדי. נסה שוב."
-      : "לא ניתן לזהות את הכריכה כרגע.";
+    const message =
+      error instanceof DOMException && error.name === "AbortError"
+        ? "הזיהוי ארך זמן רב מדי. נסה שוב."
+        : "לא ניתן לזהות את הכריכה כרגע.";
     return json({ error: message }, 500);
   }
 });
