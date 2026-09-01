@@ -26,6 +26,13 @@ import { createClient } from "npm:@supabase/supabase-js@2.110.9";
 // cover-recognition.js, which now gates on the confidence score this
 // function returns instead of trusting the prompt alone to suppress
 // low-confidence guesses.)
+//
+// v7 (2026-09-02): upgraded model from Haiku to Sonnet for better
+// accuracy on ambiguous/stylized covers (approved by Sheneor after a
+// cost comparison - the per-scan cost difference is a fraction of a
+// cent given this only runs when manually adding a book by photo).
+// Easy to revert: just change the model string back if Sonnet doesn't
+// meaningfully improve results in practice.
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -120,7 +127,7 @@ Deno.serve(async (req: Request) => {
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
+        model: "claude-sonnet-5",
         max_tokens: 1024,
         messages: [
           {
