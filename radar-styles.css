@@ -1,6 +1,7 @@
 .radarCard {
   margin-bottom: 14px;
 }
+
 /* .sourceLinks base styling lives in price-styles.css, which radar.html
    doesn't load (it's price-page-specific) - dashboard.css only has a
    mobile-width media-query override for it, not the actual button look.
@@ -21,11 +22,25 @@
   box-shadow: var(--shadow);
   font-weight: 600;
 }
+.radarCard {
+  position: relative;
+  overflow: hidden;
+}
+.radarCard::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 4px;
+  background: linear-gradient(90deg, var(--green), var(--gold));
+}
 .radarCardHead {
   display: flex;
   gap: 12px;
   align-items: flex-start;
   margin-bottom: 4px;
+  margin-top: 4px;
 }
 .radarCardHead h2 {
   margin: 0 0 2px;
@@ -92,39 +107,93 @@
   font-weight: 700;
 }
 .radarOffer {
-  border: 1px solid var(--line);
+  border: none;
   border-radius: 14px;
   padding: 10px 14px;
   margin-top: 10px;
-  background: var(--card);
+  background: var(--green2);
+  border-right: 4px solid var(--green);
 }
 .radarOffer.muted {
-  opacity: 0.6;
+  background: #f4f5fa;
+  border-right-color: #b4b2a9;
+  opacity: 0.75;
 }
 .radarOffer.purchased {
-  border-color: var(--teal);
+  border-right-color: var(--teal);
   background: var(--green2);
   opacity: 1;
 }
 .radarOffer p {
   margin: 2px 0;
 }
-/* The total price is the single number the user is meant to compare
-   across offers - deliberately larger and in the accent color instead
-   of blending into the same size as everything else in the row. */
-.radarOfferPrice {
-  font-size: 19px;
-  color: var(--green);
+/* Book price sits in its own colored pill (with a small book glyph) so
+   it reads as "the price of the book" at a glance, separate from
+   shipping. Shipping gets a truck glyph instead of the word "משלוח" to
+   save horizontal space so the whole row - book price, shipping, total
+   - fits on one line without wrapping. */
+.offerPriceRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+}
+.offerPricePill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--green);
+  color: white;
+  border-radius: 999px;
+  padding: 5px 10px;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.offerPricePill.inactive {
+  background: #b4b2a9;
+}
+.offerPricePill.purchased {
+  background: var(--teal);
+}
+.offerBookIcon {
+  font-size: 13px;
+}
+.offerBookPrice {
+  font-size: 13px;
+  font-weight: 800;
+}
+.offerShipIcon {
+  font-size: 14px;
+  flex-shrink: 0;
+}
+.offerShipAmount {
+  font-size: 13px;
+  color: var(--muted);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.offerEquals {
+  color: #b4b2a9;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+.offerTotal {
+  font-weight: 800;
+  color: var(--ink);
+  font-size: 14px;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 .cheapestBadge {
   display: inline-block;
-  background: var(--gold);
-  color: var(--ink);
+  background: linear-gradient(135deg, var(--gold), #ffe3a0);
+  color: #4a3300;
   border-radius: 999px;
   padding: 2px 10px;
   font-size: 12px;
   font-weight: 800;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 
 /* Card-level "קניתי" - one per book, not per competing offer, so it's
