@@ -37,7 +37,19 @@
             <div class="sub">גרסה 3.0</div>
           </div>
         </div>
-        <div id="count" class="count"></div>
+        <div class="countCol">
+          <div id="count" class="count"></div>
+          <div class="sync syncCompact">
+            <span id="syncText">מתחבר לסנכרון...</span>
+            <button
+              id="signOut"
+              class="ghost"
+              style="display: none; padding: 3px 8px; margin-right: 6px"
+            >
+              יציאה
+            </button>
+          </div>
+        </div>
       </header>
       <nav class="shelf">
         <div class="navs">
@@ -55,16 +67,6 @@
           </button>
         </div>
       </nav>
-      <div class="sync">
-        <span id="syncText">מתחבר לסנכרון...</span>
-        <button
-          id="signOut"
-          class="ghost"
-          style="display: none; padding: 5px 9px; margin-right: 8px"
-        >
-          יציאה
-        </button>
-      </div>
       <section class="tools">
         <div class="search">
           <b>⌕</b

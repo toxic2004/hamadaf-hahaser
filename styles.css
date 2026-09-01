@@ -92,6 +92,12 @@ h1 {
   font-weight: 700;
   white-space: nowrap;
 }
+.countCol {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
 .sync {
   padding: 9px 12px;
   border-radius: 12px;
@@ -100,6 +106,17 @@ h1 {
   font-size: 13px;
   margin-bottom: 14px;
   border: 1px solid var(--line);
+}
+.syncCompact {
+  padding: 4px 10px;
+  border-radius: 99px;
+  font-size: 11px;
+  margin-bottom: 0;
+  border: none;
+  white-space: nowrap;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .tools {
   display: flex;
