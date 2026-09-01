@@ -111,7 +111,7 @@ function purchaseFormHtml(offer) {
   </div>`;
 }
 
-function offerRow(offer, isCheapest) {
+function offerRow(offer, isCheapest, activeOfferCount) {
   const isPurchased = offer.status === "נקנתה";
   const isActive = offer.status === "פעילה";
   const shippingKnown =
@@ -138,13 +138,16 @@ function offerRow(offer, isCheapest) {
     isCheapest && offer.status === "פעילה"
       ? `<span class="cheapestBadge">🏆 הזול ביותר</span>`
       : "";
-  // Per-offer, not per-card like "קניתי" - "too expensive"/"not
-  // relevant" is a judgment about one specific offer, not the whole
-  // book. Dismissed offers move out of this card entirely into the
-  // separate "הצעות שנדחו" section (see renderDismissedSection).
-  const dismissButton = isActive
-    ? `<button class="dismissButton" data-dismiss-offer="${offer.id}">✕ לא רלוונטי</button>`
-    : "";
+  // Dismiss button moved to buyControlHtml (2026-08-31) so it sits next
+  // to "קניתי" at matching size/weight when there's exactly one active
+  // offer - the common case. With 2+ active offers there's no single
+  // "קניתי" button to pair it with (a picker is shown instead), so each
+  // offer keeps its own dismiss button here, still same size/font as
+  // the card-level buy button per the same request.
+  const dismissButton =
+    isActive && activeOfferCount > 1
+      ? `<button class="dismissButton" data-dismiss-offer="${offer.id}">✕ לא רלוונטי</button>`
+      : "";
   return `<div class="radarOffer${offer.status !== "פעילה" ? " muted" : ""}${isPurchased ? " purchased" : ""}" data-offer-id="${offer.id}">
     ${cheapestBadge}
     <p><strong class="radarOfferPrice">${money(offer.item_price)}</strong> · ${shipping}${total}</p>
@@ -163,7 +166,11 @@ function offerRow(offer, isCheapest) {
 function buyControlHtml(book, activeOffers) {
   if (!activeOffers.length) return "";
   if (activeOffers.length === 1) {
+    // Paired side-by-side, matching size/font - buying and dismissing
+    // are the two possible verdicts on the one offer that exists here,
+    // so they read as equally-weighted opposite actions.
     return `<div class="radarBuyWrap" data-buy-wrap="${book.id}">
+      <button class="dismissButton" data-dismiss-offer="${activeOffers[0].id}">✕ לא רלוונטי</button>
       <button class="radarBuyButton" data-start-purchase="${activeOffers[0].id}">✓ קניתי</button>
     </div>`;
   }
@@ -204,7 +211,7 @@ function bookCard(book, bookOffers, isArchived) {
         ${isArchived ? '<span class="badge">נרכש</span>' : ""}
       </div>
     </div>
-    ${sorted.map((offer) => offerRow(offer, offer.id === cheapestActiveId)).join("")}
+    ${sorted.map((offer) => offerRow(offer, offer.id === cheapestActiveId, activeOffers.length)).join("")}
     ${isArchived ? "" : buyControlHtml(book, activeOffers)}
   </article>`;
 }

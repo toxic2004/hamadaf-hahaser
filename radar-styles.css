@@ -135,6 +135,8 @@
 .radarBuyWrap {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
   margin-top: 12px;
 }
 .radarBuyButton {
@@ -176,16 +178,24 @@
 .radarOffer button {
   margin-top: 6px;
 }
+/* Same size/weight/font as .radarBuyButton per explicit request - the
+   two buttons are meant to read as equally-weighted opposite verdicts
+   on an offer ("קניתי" vs "לא רלוונטי"), not one primary action and one
+   afterthought. Only the color scheme stays distinct (danger red
+   outline vs the warm pink/gold fill) so they're still tellable apart
+   at a glance. */
 .dismissButton {
   background: white;
-  border: 1px solid var(--danger);
+  border: 2px solid var(--danger);
   color: var(--danger);
   border-radius: 999px;
-  padding: 6px 14px;
-  font-size: 13px;
-  font-weight: 600;
+  padding: 10px 22px;
+  font-weight: 800;
+  font-size: 15px;
   cursor: pointer;
-  margin-inline-start: 8px;
+}
+.dismissButton:active {
+  transform: scale(0.97);
 }
 .purchaseForm {
   margin-top: 10px;
