@@ -160,8 +160,10 @@ async function exportToExcel() {
   if (!state.books.length) return toast("אין ספרים לייצוא");
   if (!window.HamadafExcel || typeof ExcelJS === "undefined")
     return toast("רכיב הייצוא עדיין לא נטען. נסה שוב בעוד רגע");
+  // exportExcel is now an icon-only button (SVG), so the loading state
+  // is shown via the disabled attribute + CSS dimming instead of
+  // swapping textContent, which would previously wipe out the icon.
   exportExcel.disabled = true;
-  exportExcel.textContent = "מכין קובץ...";
   try {
     await window.HamadafExcel.downloadWorkbook(state.books, ExcelJS);
     toast("קובץ XLSX בעברית מוכן");
@@ -170,7 +172,6 @@ async function exportToExcel() {
     toast("יצירת קובץ XLSX נכשלה");
   } finally {
     exportExcel.disabled = false;
-    exportExcel.textContent = "⇩ ייצוא ל Excel";
   }
 }
 async function login() {
