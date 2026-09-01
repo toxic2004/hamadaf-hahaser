@@ -11,6 +11,21 @@ import { createClient } from "npm:@supabase/supabase-js@2.110.9";
 // new key or secret needed. The request/response contract with the
 // browser (imageDataUrl in, {candidates:[...]} out) is unchanged, so
 // cover-recognition.js required no changes.
+//
+// v4 (2026-09-02): sharpened the prompt after a real misidentification -
+// a graphic-novel cover with the author's name (יובל נח הררי) printed
+// larger than the actual title caused the model to return the author's
+// name (misspelled, ר read as ד) as the title. Added explicit
+// disambiguation guidance and a spelling-accuracy instruction for known
+// authors.
+//
+// (v5 briefly added temporary diagnostic console.log lines to confirm,
+// via real logs, that low-confidence hallucinated guesses were coming
+// from Claude itself and not the client's OCR fallback - confirmed, then
+// removed here in v6. The actual fix for that lives in
+// cover-recognition.js, which now gates on the confidence score this
+// function returns instead of trusting the prompt alone to suppress
+// low-confidence guesses.)
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
