@@ -1,3 +1,14 @@
+// Deliberate duplicate of supabase/functions/alerts/scanner-core.mjs
+// (2026-08-31 redeploy): discovered this function's LIVE deployment
+// had been silently stuck on an Aug-19 snapshot of this file for
+// weeks - merging to git never triggers a redeploy, and a
+// ../alerts/ relative import isn't reliable for this deploy path
+// (each Edge Function deploys as a self-contained unit). Copied
+// here explicitly so the git-tracked source matches what's
+// actually live, instead of silently drifting again. If this file
+// ever changes, update alerts/scanner-core.mjs too AND redeploy
+// rebooks-simple-scan - a git merge alone changes nothing live.
+
 import { isDirectProductUrl } from "./core.mjs";
 
 const SOURCE_PLANS = Object.freeze({

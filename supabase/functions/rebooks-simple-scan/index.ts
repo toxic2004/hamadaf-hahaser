@@ -2,8 +2,9 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.110.9";
 import {
   buildPriceOfferPayload,
+  nextCursorAfterBatch,
   scanBookOnRebooks,
-} from "../alerts/scanner-core.mjs";
+} from "./scanner-core.mjs";
 
 // Simple Rebooks scanner (2026-08-19, built per explicit user approval of
 // upgrade-plan section 5). Deliberately separate from supabase/functions/
@@ -65,16 +66,48 @@ function sleep(ms: number) {
 // Loads books directly from the single source of truth, exactly the
 // statuses the user specified (section 2) - nothing else, no separate
 // watch-list, no mutation.
-async function loadActiveBooks(userId: string, limit: number) {
-  const { data, error } = await service()
+//
+// Keyset-pagination cursor (2026-08-31): previously always
+// .order("id").limit(N) with no cursor, so repeated invocations only
+// ever re-scanned the same first N books and never reached the rest of
+// a 67-75 book list. book.id is a text UUID, not chronological, but
+// text comparison is still a stable total order - exactly what keyset
+// pagination needs to guarantee every book is visited once per cycle.
+async function loadActiveBooks(
+  userId: string,
+  limit: number,
+  cursor: string | null,
+) {
+  let query = service()
     .from("books")
     .select("id,user_id,title,author,status")
     .eq("user_id", userId)
     .in("status", ["מחפש", "בדיונים"])
     .order("id", { ascending: true })
     .limit(limit);
+  if (cursor) query = query.gt("id", cursor);
+  const { data, error } = await query;
   if (error) throw error;
   return data || [];
+}
+
+async function getScanCursor(userId: string): Promise<string | null> {
+  const { data, error } = await service()
+    .from("rebooks_scan_cursor")
+    .select("last_book_id")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) throw error;
+  return data?.last_book_id || null;
+}
+
+async function setScanCursor(userId: string, lastBookId: string | null) {
+  const { error } = await service().from("rebooks_scan_cursor").upsert({
+    user_id: userId,
+    last_book_id: lastBookId,
+    updated_at: new Date().toISOString(),
+  });
+  if (error) throw error;
 }
 
 // Same select-then-insert/update pattern already used in alerts/index.ts,
@@ -107,11 +140,14 @@ async function saveOffer(
 }
 
 async function scanUser(userId: string, limit: number) {
-  const books = await loadActiveBooks(userId, limit);
+  const cursor = await getScanCursor(userId);
+  const books = await loadActiveBooks(userId, limit, cursor);
   const summary = {
     booksScanned: 0,
     offersFound: 0,
     offersSaved: 0,
+    cursorBefore: cursor,
+    cursorAfter: null as string | null,
     perBook: [] as Array<Record<string, unknown>>,
   };
   for (const book of books) {
@@ -157,6 +193,9 @@ async function scanUser(userId: string, limit: number) {
     });
     await sleep(REQUEST_DELAY_MS);
   }
+  const newCursor = nextCursorAfterBatch(books, limit);
+  await setScanCursor(userId, newCursor);
+  summary.cursorAfter = newCursor;
   return summary;
 }
 
