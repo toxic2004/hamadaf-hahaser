@@ -116,12 +116,19 @@ function offerRow(offer, isCheapest, activeOfferCount) {
   const isActive = offer.status === "פעילה";
   const shippingKnown =
     offer.shipping_price !== null && offer.shipping_price !== undefined;
-  const shipping = shippingKnown
-    ? `משלוח: ${money(offer.shipping_price)}`
-    : "משלוח: לא ידוע";
-  const total = shippingKnown
-    ? `<strong> · סה"כ: ${money(Number(offer.item_price) + Number(offer.shipping_price))}</strong>`
-    : "";
+  // Pill shows the book price on its own (with a small book glyph so the
+  // number reads as "the book" at a glance), shipping gets a truck glyph
+  // instead of the word "משלוח" to save horizontal space, and the two are
+  // joined by "=" into the total only when shipping is actually known -
+  // never invent a total from an unknown shipping cost.
+  const shippingHtml = shippingKnown
+    ? `<span class="offerShipIcon" aria-hidden="true">🚚</span><span class="offerShipAmount">${money(offer.shipping_price)}</span><span class="offerEquals" aria-hidden="true">=</span><span class="offerTotal">${money(Number(offer.item_price) + Number(offer.shipping_price))}</span>`
+    : `<span class="offerShipIcon" aria-hidden="true">🚚</span><span class="offerShipAmount">משלוח לא ידוע</span>`;
+  const pillStatusClass = isPurchased
+    ? " purchased"
+    : !isActive
+      ? " inactive"
+      : "";
   const contact = [offer.seller_name, offer.phone]
     .filter(Boolean)
     .map(escapeHtml)
@@ -150,7 +157,10 @@ function offerRow(offer, isCheapest, activeOfferCount) {
       : "";
   return `<div class="radarOffer${offer.status !== "פעילה" ? " muted" : ""}${isPurchased ? " purchased" : ""}" data-offer-id="${offer.id}">
     ${cheapestBadge}
-    <p><strong class="radarOfferPrice">${money(offer.item_price)}</strong> · ${shipping}${total}</p>
+    <div class="offerPriceRow">
+      <span class="offerPricePill${pillStatusClass}"><span class="offerBookIcon" aria-hidden="true">📖</span><span class="offerBookPrice">${money(offer.item_price)}</span></span>
+      ${shippingHtml}
+    </div>
     <p class="sub">${contact}${pickup}</p>
     <p class="sub">הוזן ${formatDate(offer.entered_at)} · ${escapeHtml(offer.status)}</p>
     ${purchasedNote}
