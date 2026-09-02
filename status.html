@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width,initial-scale=1,viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#ff5c7a" />
+    <title>דוח מצב | המדף החסר</title>
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="./assets/logo-hamadaf.svg?v=20260823-1"
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;700;800;900&family=Assistant:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./dashboard.css?v=20260823-1" />
+    <link rel="stylesheet" href="./status-styles.css?v=20260902-1" />
+  </head>
+  <body>
+    <section id="authCard" class="authCard">
+      <h2>כניסה לדוח מצב</h2>
+      <p class="sub">השתמש באותו חשבון של המדף החסר.</p>
+      <div class="field">
+        <label for="email">אימייל</label><input id="email" type="email" />
+      </div>
+      <div class="field">
+        <label for="password">סיסמה</label
+        ><input id="password" type="password" />
+      </div>
+      <button id="login" class="primary">כניסה</button>
+      <p id="authMessage" class="sub" aria-live="polite"></p>
+    </section>
+    <main id="app" class="shell hidden">
+      <header class="top">
+        <div>
+          <h1>דוח מצב</h1>
+          <p class="sub">תמונת מצב של המדף החסר</p>
+        </div>
+        <a class="button ghost" href="./">חזרה למדף</a>
+      </header>
+      <div id="loading" class="notice">טוען נתונים...</div>
+      <div id="error" class="error hidden" role="alert"></div>
+      <section id="content" class="hidden">
+        <div id="metrics" class="metrics">
+          <article class="metric">
+            <span>עברו ל"השגתי" ב-48 שעות</span
+            ><strong id="acquiredCount">0</strong>
+          </article>
+          <article class="metric">
+            <span>נוספו דרך תמונה</span><strong id="photoCount">0</strong
+            ><small>מהיום שהתחלנו לעקוב</small>
+          </article>
+          <article class="metric">
+            <span>לא עודכנו ב-72 שעות</span><strong id="staleCount">0</strong>
+          </article>
+        </div>
+        <div class="panels">
+          <article class="panel">
+            <h2>ספרים שהושגו לאחרונה</h2>
+            <div id="acquiredList" class="statusList"></div>
+          </article>
+        </div>
+      </section>
+    </main>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.110.9"></script>
+    <script src="./supabase-client.js"></script>
+    <script src="./status.js"></script>
+  </body>
+</html>
