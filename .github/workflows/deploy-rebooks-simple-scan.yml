@@ -1,0 +1,55 @@
+name: Deploy rebooks-simple-scan function
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "supabase/functions/rebooks-simple-scan/**"
+
+# Deployments are performed through the connected Supabase project. Added
+# 2026-09-01 after discovering rebooks-simple-scan had been silently stuck
+# on a manually-deployed snapshot for weeks (see
+# docs/2026-08-31-session-summary.md and PR #101) - merging to git alone
+# never redeploys anything. This workflow closes that gap the same way
+# deploy-alerts.yml already does for the alerts function (confirmed
+# working, alerts is at version 34 via this exact pattern).
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-supabase-rebooks-simple-scan
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+    steps:
+      - name: Check required secrets
+        shell: bash
+        run: |
+          test -n "$SUPABASE_ACCESS_TOKEN" || {
+            echo "Missing GitHub secret: SUPABASE_ACCESS_TOKEN"
+            exit 1
+          }
+          test -n "$SUPABASE_PROJECT_REF" || {
+            echo "Missing GitHub secret: SUPABASE_PROJECT_REF"
+            exit 1
+          }
+
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.50.5
+
+      - name: Deploy rebooks-simple-scan to Supabase
+        run: >-
+          supabase functions deploy rebooks-simple-scan
+          --project-ref "$SUPABASE_PROJECT_REF"
+          --no-verify-jwt
