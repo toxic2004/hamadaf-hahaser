@@ -1096,6 +1096,303 @@ export async function scanBookOnRebooks(
 // it can never be faked the way the "מי הזיז את הגבינה שלי" bug did
 // (shipping_price: 0 to force a total under 30 ₪ without an approved
 // pickup branch).
+// Second source added to the scan pipeline (2026-08-31), after Rebooks.
+// Mirrors scanBookOnRebooks' shape exactly (same two-step search-then-
+// enrich structure) but Evrit's search results page never carries price/
+// availability at all - classifySearchResponse's "evrit" branch already
+// returns exactly one offer per match with itemPrice/availabilityStatus
+// both null, precisely so this function has something to enrich the
+// same way Rebooks' offers get their shipping enriched from the product
+// page. Live-verified against the real site on 2026-08-31 (not just the
+// 2026-08-16 fixtures): fetched https://www.e-vrit.co.il/Product/9199/
+// directly and confirmed the exact "מודפס" + "₪76.8" text pattern
+// extractEvritProductDetails looks for is still present verbatim.
+export async function scanBookOnEvrit(
+  book,
+  { fetchImpl = fetch, timeoutMs = 6_000 } = {},
+) {
+  const plan = sourcePlan("evrit", book);
+  if (!plan.searchUrl) {
+    return { status: "unavailable", note: plan.note || null, offers: [] };
+  }
+  let response;
+  try {
+    response = await fetchImpl(plan.searchUrl, {
+      method: "GET",
+      redirect: "follow",
+      headers: {
+        accept:
+          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.7",
+        "accept-language": "he-IL,he;q=0.9,en-US;q=0.6,en;q=0.5",
+        "user-agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+      },
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (error) {
+    return {
+      status: "temporary_error",
+      note: `שגיאת רשת בפנייה למקור: ${String(error?.message || error)}`,
+      offers: [],
+    };
+  }
+  const body = await response.text().catch(() => "");
+  const classified = classifySearchResponse({
+    sourceId: "evrit",
+    title: book.title,
+    status: response.status,
+    contentType: response.headers.get("content-type") || "",
+    body,
+  });
+  if (classified.status !== "found" || !classified.offers?.length) {
+    return { status: classified.status, note: classified.note, offers: [] };
+  }
+  const enriched = [];
+  for (const offer of classified.offers) {
+    // Search-result links can be relative ("/Product/9199/...") - must
+    // be resolved against the site's base URL before fetching, and the
+    // resolved absolute URL is what should end up stored, not the
+    // relative fragment (a relative path saved to price_offers.source_url
+    // wouldn't be a usable link for the person reading the report).
+    let absoluteUrl;
+    try {
+      absoluteUrl = new URL(
+        offer.sourceUrl,
+        "https://www.e-vrit.co.il",
+      ).toString();
+    } catch {
+      continue;
+    }
+    let productResponse;
+    try {
+      productResponse = await fetchImpl(absoluteUrl, {
+        method: "GET",
+        redirect: "follow",
+        headers: {
+          accept:
+            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.7",
+          "accept-language": "he-IL,he;q=0.9,en-US;q=0.6,en;q=0.5",
+          "user-agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+        },
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+    } catch {
+      continue; // Product page unreachable - drop this offer rather than guess.
+    }
+    if (!productResponse.ok) continue;
+    const productBody = await productResponse.text();
+    const details = extractEvritProductDetails(productBody);
+    if (!details) continue; // No printed edition found on this page - not a print offer.
+    const shipping = evritShipping();
+    enriched.push({
+      ...offer,
+      sourceUrl: absoluteUrl,
+      sourceListingKey: absoluteUrl,
+      itemPrice: details.itemPrice,
+      availabilityStatus: details.availabilityStatus,
+      shippingKnown: Boolean(shipping),
+      shippingPrice: shipping ? shipping.price : null,
+      shippingPickupPrice: shipping ? shipping.allOptions.pickupPrice : null,
+      shippingPickupApproved: shipping
+        ? shipping.allOptions.pickupApproved
+        : null,
+      shippingDistributionPrice: shipping
+        ? shipping.allOptions.distributionPrice
+        : null,
+      shippingCourierPrice: shipping ? shipping.allOptions.courierPrice : null,
+    });
+  }
+  return {
+    status: enriched.length ? "found" : "manual_required",
+    note: enriched.length
+      ? classified.note
+      : "נמצא קישור לדף המוצר, אך לא ניתן היה לאמת מחיר ומלאי בפועל.",
+    offers: enriched,
+  };
+}
+
+const COMMON_FETCH_HEADERS = Object.freeze({
+  accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.7",
+  "accept-language": "he-IL,he;q=0.9,en-US;q=0.6,en;q=0.5",
+  "user-agent":
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+});
+
+// Booknet's classifySearchResponse branch already returns a fully-formed
+// offer straight from extractBooknetOffer() (real price + real
+// availability read directly off the search page - no separate product
+// page needed, unlike Rebooks/Evrit/Steimatzky). Confirmed live
+// 2026-08-31: booknet.co.il/מוצרים/אנטי-שביר-100026207 still shows
+// "מחיר נוכחי: 96 שח" in exactly the format extractBooknetOffer expects.
+export async function scanBookOnBooknet(
+  book,
+  { fetchImpl = fetch, timeoutMs = 6_000 } = {},
+) {
+  const plan = sourcePlan("booknet", book);
+  if (!plan.searchUrl) {
+    return { status: "unavailable", note: plan.note || null, offers: [] };
+  }
+  let response;
+  try {
+    response = await fetchImpl(plan.searchUrl, {
+      method: "GET",
+      redirect: "follow",
+      headers: COMMON_FETCH_HEADERS,
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (error) {
+    return {
+      status: "temporary_error",
+      note: `שגיאת רשת בפנייה למקור: ${String(error?.message || error)}`,
+      offers: [],
+    };
+  }
+  const body = await response.text().catch(() => "");
+  const classified = classifySearchResponse({
+    sourceId: "booknet",
+    title: book.title,
+    status: response.status,
+    contentType: response.headers.get("content-type") || "",
+    body,
+  });
+  if (classified.status !== "found" || !classified.offers?.length) {
+    return { status: classified.status, note: classified.note, offers: [] };
+  }
+  return { status: "found", note: classified.note, offers: classified.offers };
+}
+
+// Steimatzky needs the same two-step shape as Evrit: search finds a
+// product link (confirmed relative in the wild, e.g. "/012010227" - same
+// risk already found and fixed for Evrit, applied here proactively
+// rather than waiting to hit it again), then the product page itself
+// carries the real price via an og:product:price:amount meta tag.
+export async function scanBookOnSteimatzky(
+  book,
+  { fetchImpl = fetch, timeoutMs = 6_000 } = {},
+) {
+  const plan = sourcePlan("steimatzky", book);
+  if (!plan.searchUrl) {
+    return { status: "unavailable", note: plan.note || null, offers: [] };
+  }
+  let response;
+  try {
+    response = await fetchImpl(plan.searchUrl, {
+      method: "GET",
+      redirect: "follow",
+      headers: COMMON_FETCH_HEADERS,
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (error) {
+    return {
+      status: "temporary_error",
+      note: `שגיאת רשת בפנייה למקור: ${String(error?.message || error)}`,
+      offers: [],
+    };
+  }
+  const body = await response.text().catch(() => "");
+  const classified = classifySearchResponse({
+    sourceId: "steimatzky",
+    title: book.title,
+    status: response.status,
+    contentType: response.headers.get("content-type") || "",
+    body,
+  });
+  if (classified.status !== "found" || !classified.offers?.length) {
+    return { status: classified.status, note: classified.note, offers: [] };
+  }
+  const enriched = [];
+  for (const offer of classified.offers) {
+    let absoluteUrl;
+    try {
+      absoluteUrl = new URL(
+        offer.sourceUrl,
+        "https://www.steimatzky.co.il",
+      ).toString();
+    } catch {
+      continue;
+    }
+    let productResponse;
+    try {
+      productResponse = await fetchImpl(absoluteUrl, {
+        method: "GET",
+        redirect: "follow",
+        headers: COMMON_FETCH_HEADERS,
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+    } catch {
+      continue;
+    }
+    if (!productResponse.ok) continue;
+    const productBody = await productResponse.text();
+    const details = extractSteimatzkyOffer(productBody);
+    if (!details) continue;
+    const shipping = steimatzkyShipping();
+    enriched.push({
+      ...offer,
+      sourceUrl: absoluteUrl,
+      sourceListingKey: absoluteUrl,
+      itemPrice: details.itemPrice,
+      availabilityStatus: details.availabilityStatus,
+      shippingKnown: Boolean(shipping),
+      shippingPrice: shipping ? shipping.price : null,
+    });
+  }
+  return {
+    status: enriched.length ? "found" : "manual_required",
+    note: enriched.length
+      ? classified.note
+      : "נמצא קישור לדף המוצר, אך לא ניתן היה לאמת מחיר ומלאי בפועל.",
+    offers: enriched,
+  };
+}
+
+// Findabook's classifySearchResponse branch, like Booknet, already
+// returns a fully-formed offer from extractFindabookOffer() directly off
+// the search page - no separate product-page fetch. Note (carried over
+// unchanged from the existing tested behavior, not a new limitation
+// introduced here): availability is always reported as "במלאי"
+// (findabookAvailability() has no real out-of-stock detection yet) and
+// shipping is always left unknown - extractFindabookShipping() exists
+// but nothing currently calls it, on either this new orchestrator or the
+// classification branch it wraps.
+export async function scanBookOnFindabook(
+  book,
+  { fetchImpl = fetch, timeoutMs = 6_000 } = {},
+) {
+  const plan = sourcePlan("findabook", book);
+  if (!plan.searchUrl) {
+    return { status: "unavailable", note: plan.note || null, offers: [] };
+  }
+  let response;
+  try {
+    response = await fetchImpl(plan.searchUrl, {
+      method: "GET",
+      redirect: "follow",
+      headers: COMMON_FETCH_HEADERS,
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (error) {
+    return {
+      status: "temporary_error",
+      note: `שגיאת רשת בפנייה למקור: ${String(error?.message || error)}`,
+      offers: [],
+    };
+  }
+  const body = await response.text().catch(() => "");
+  const classified = classifySearchResponse({
+    sourceId: "findabook",
+    title: book.title,
+    status: response.status,
+    contentType: response.headers.get("content-type") || "",
+    body,
+  });
+  if (classified.status !== "found" || !classified.offers?.length) {
+    return { status: classified.status, note: classified.note, offers: [] };
+  }
+  return { status: "found", note: classified.note, offers: classified.offers };
+}
+
 export function buildPriceOfferPayload(book, offer, now = new Date()) {
   return {
     user_id: book.user_id,
