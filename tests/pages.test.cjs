@@ -86,7 +86,13 @@ test("critical UI flows are wired and ISBN has a back link", () => {
     coverModule,
     /accept="image\/jpeg,image\/png,image\/webp,image\/heic,image\/heif"/,
   );
-  assert.match(coverModule, /capture="environment"/);
+  // Deliberately NOT capture="environment": Sheneor asked (2026-09-02)
+  // to be able to choose an existing photo from the library, not be
+  // forced into the camera. A prior session re-added this attribute
+  // while "fixing" this exact assertion without knowing about that
+  // decision - keep this test aligned with the product decision, not
+  // the other way around.
+  assert.doesNotMatch(coverModule, /capture="environment"/);
 });
 
 test("dashboard controls have concrete handlers", () => {
