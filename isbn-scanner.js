@@ -114,6 +114,9 @@
     stopScanner();
     element("isbnScanner")?.classList.remove("open");
     element("isbn").value = detected;
+    // Flag consumed by isbn.html's save handler to tag added_via as
+    // "isbn_scan" (camera/photo) vs "isbn_typed" (manual entry).
+    window.__hamadafIsbnViaScan = true;
     if (typeof window.lookupBook === "function") await window.lookupBook();
     return true;
   }
@@ -291,6 +294,9 @@
   function init() {
     const modal = element("isbnScanner");
     ensurePhotoFallback();
+    element("isbn")?.addEventListener("input", () => {
+      window.__hamadafIsbnViaScan = false;
+    });
     element("scanIsbn")?.addEventListener("click", openScanner);
     element("closeScanner")?.addEventListener("click", closeScanner);
     modal?.addEventListener("click", (event) => {
