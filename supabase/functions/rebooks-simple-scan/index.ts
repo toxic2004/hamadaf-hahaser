@@ -3,37 +3,54 @@ import { createClient } from "npm:@supabase/supabase-js@2.110.9";
 import {
   buildPriceOfferPayload,
   nextCursorAfterBatch,
+  scanBookOnBooknet,
+  scanBookOnEvrit,
+  scanBookOnFindabook,
   scanBookOnRebooks,
+  scanBookOnSteimatzky,
 } from "./scanner-core.mjs";
 
-// Simple Rebooks scanner (2026-08-19, built per explicit user approval of
-// upgrade-plan section 5). Deliberately separate from supabase/functions/
-// alerts - does NOT read or write report_checks/report_runs at all. One
-// book in, one verified-or-nothing price_offers row out, per the user's
+// Simple multi-source scanner (2026-08-19, Rebooks only; extended
+// 2026-08-31 to all 4 sources per the user's explicit go-ahead).
+// Deliberately separate from supabase/functions/alerts - does NOT read
+// or write report_checks/report_runs at all. One book in, one
+// verified-or-nothing price_offers row out per source, per the user's
 // own description of what he wants ("פעולה פשוטה ואמיתית", section 3).
 //
-// Scope: Rebooks only for now (section 4 - Rebooks is checked first in
-// every run; other sources are meant to be added later, one at a time,
-// through the same pattern - not yet done here).
+// Scope: all 4 sources from section 4 of the spec, checked in the
+// documented order (Rebooks first, then the others). yad2/Facebook
+// stay unautomated per section 4 (login required) - not attempted here.
 //
 // Never touches the `books` table beyond a read-only select.
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 
-// Same politeness constraints already agreed for the alerts pipeline
-// (2026-08-15, approved): low concurrency (here: fully sequential, one
-// book at a time - even simpler than alerts' concurrency of 2) with a
-// delay between requests. Not an attempt to defeat any block - if Rebooks
-// blocks a request anyway, the correct response is to report "not
-// verified", never to escalate toward fingerprinting or paid unblocking.
-const REQUEST_DELAY_MS = 900;
+// Politeness: a short pause once per book, after all 5 sources have
+// been checked for it - not between each individual source call within
+// the same book, since consecutive calls there go to different domains
+// (no risk of hammering any single site rapidly). Not an attempt to
+// defeat any block - if a source blocks a request anyway, the correct
+// response is to report "not verified", never to escalate toward
+// fingerprinting or paid unblocking.
+const REQUEST_DELAY_MS = 500;
 const FETCH_TIMEOUT_MS = 6_000;
-// Default cap per invocation to comfortably fit inside the Edge Function
-// timeout budget without needing any batching/checkpoint bookkeeping
-// (the whole point of "simple" per section 3). Callers can raise this via
-// the `limit` body field once real-world timing is confirmed.
-const DEFAULT_BOOK_LIMIT = 15;
+// Lowered from 15 (2026-08-31): scanning 5 sources per book instead of
+// 1 means up to ~9 fetches per book now (Evrit and Steimatzky each need
+// a second product-page fetch), not 1-3. This is a conservative
+// estimate, not yet confirmed against real invocation timing - the
+// premortem checklist item "ריצת אימות חי מקצה לקצה" still applies
+// before this actually gets scheduled on a cron.
+const DEFAULT_BOOK_LIMIT = 5;
+const MAX_BOOK_LIMIT = 10;
+
+const SOURCE_SCANNERS = [
+  { id: "rebooks", scan: scanBookOnRebooks },
+  { id: "evrit", scan: scanBookOnEvrit },
+  { id: "booknet", scan: scanBookOnBooknet },
+  { id: "steimatzky", scan: scanBookOnSteimatzky },
+  { id: "findabook", scan: scanBookOnFindabook },
+] as const;
 
 let serviceClient: ReturnType<typeof createClient> | null = null;
 function service() {
@@ -139,6 +156,21 @@ async function saveOffer(
   return { created: !existing.data?.id };
 }
 
+// Never store an offer we can't actually stand behind: needs a direct
+// product page (already enforced per-source in extractSourceOffers/
+// the relevant extract* function), a real price, and an explicit
+// availability status (section 3 - "אם אחד מהפרטים אינו ידוע, אסור
+// להמציא אותו"). Applied uniformly across every source, not just
+// Rebooks - the rule doesn't change per site.
+function isSaveableOffer(offer: Record<string, any>): boolean {
+  return (
+    offer.itemPrice != null &&
+    Boolean(offer.sourceUrl) &&
+    (offer.availabilityStatus === "במלאי" ||
+      offer.availabilityStatus === "לא במלאי")
+  );
+}
+
 async function scanUser(userId: string, limit: number) {
   const cursor = await getScanCursor(userId);
   const books = await loadActiveBooks(userId, limit, cursor);
@@ -152,44 +184,45 @@ async function scanUser(userId: string, limit: number) {
   };
   for (const book of books) {
     summary.booksScanned += 1;
-    let result: Awaited<ReturnType<typeof scanBookOnRebooks>>;
-    try {
-      result = await scanBookOnRebooks(book, {
-        fetchImpl: fetch,
-        timeoutMs: FETCH_TIMEOUT_MS,
-      });
-    } catch (error) {
-      result = {
-        status: "temporary_error",
-        note: String((error as Error)?.message || error),
-        offers: [],
+    let foundForBook = 0;
+    let savedForBook = 0;
+    const perSource: Record<string, unknown> = {};
+    for (const { id: sourceId, scan } of SOURCE_SCANNERS) {
+      let result: Awaited<ReturnType<typeof scanBookOnRebooks>>;
+      try {
+        result = await scan(book, {
+          fetchImpl: fetch,
+          timeoutMs: FETCH_TIMEOUT_MS,
+        });
+      } catch (error) {
+        result = {
+          status: "temporary_error",
+          note: String((error as Error)?.message || error),
+          offers: [],
+        };
+      }
+      let savedForSource = 0;
+      for (const offer of result.offers) {
+        if (!isSaveableOffer(offer)) continue;
+        await saveOffer(book, offer);
+        savedForSource += 1;
+        summary.offersSaved += 1;
+      }
+      foundForBook += result.offers.length;
+      savedForBook += savedForSource;
+      perSource[sourceId] = {
+        status: result.status,
+        offersFound: result.offers.length,
+        offersSaved: savedForSource,
       };
     }
-    let savedForBook = 0;
-    for (const offer of result.offers) {
-      // Never store an offer we can't actually stand behind: needs a
-      // direct product page (already enforced by extractSourceOffers),
-      // a real price, and an explicit availability status (section 3 -
-      // "אם אחד מהפרטים אינו ידוע, אסור להמציא אותו").
-      if (
-        offer.itemPrice == null ||
-        !offer.sourceUrl ||
-        (offer.availabilityStatus !== "במלאי" &&
-          offer.availabilityStatus !== "לא במלאי")
-      ) {
-        continue;
-      }
-      await saveOffer(book, offer);
-      savedForBook += 1;
-      summary.offersSaved += 1;
-    }
-    summary.offersFound += result.offers.length;
+    summary.offersFound += foundForBook;
     summary.perBook.push({
       bookId: book.id,
       title: book.title,
-      status: result.status,
-      offersFound: result.offers.length,
+      offersFound: foundForBook,
       offersSaved: savedForBook,
+      sources: perSource,
     });
     await sleep(REQUEST_DELAY_MS);
   }
@@ -216,7 +249,7 @@ Deno.serve(async (request) => {
     try {
       const body = await request.json();
       if (Number.isFinite(body?.limit) && body.limit > 0) {
-        limit = Math.min(Math.floor(body.limit), 67);
+        limit = Math.min(Math.floor(body.limit), MAX_BOOK_LIMIT);
       }
     } catch {
       // No body / not JSON - use the default limit.
