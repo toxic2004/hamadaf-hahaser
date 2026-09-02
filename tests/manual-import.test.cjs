@@ -106,7 +106,9 @@ test("temporary Supabase write failure does not change local display or store si
   assert.equal(changed, false);
   assert.equal(dom.window.localStorage.getItem(signatureKey), null);
   assert.equal(
-    dom.window.document.getElementById("localImportModal").classList.contains("open"),
+    dom.window.document
+      .getElementById("localImportModal")
+      .classList.contains("open"),
     true,
   );
 });
@@ -155,7 +157,9 @@ test("cancel closes the dialog without writing or storing signature", async () =
   assert.equal(db.calls.length, 0);
   assert.equal(dom.window.localStorage.getItem(signatureKey), null);
   assert.equal(
-    dom.window.document.getElementById("localImportModal").classList.contains("open"),
+    dom.window.document
+      .getElementById("localImportModal")
+      .classList.contains("open"),
     false,
   );
 });
@@ -179,7 +183,8 @@ test("duplicates are excluded and only new books are written", async () => {
     remoteBooks,
   });
 
-  const summary = dom.window.document.getElementById("localImportSummary").textContent;
+  const summary =
+    dom.window.document.getElementById("localImportSummary").textContent;
   assert.match(summary, /4/);
   assert.match(summary, /2/);
   dom.window.document.getElementById("confirmLocalImport").click();
@@ -190,11 +195,11 @@ test("duplicates are excluded and only new books are written", async () => {
   assert.equal(db.calls[0].length, 2);
 });
 
-test("approved list with no new books stores signature and does not write", async () => {
+test("no new books: signature is stored immediately, without ever showing the modal (closes the reappearing-dialog bug)", async () => {
   const { dom, api } = loadModule();
   const db = makeDb({ error: null });
   const localBooks = [book("ספר קיים", "מחבר")];
-  const pending = startPrompt({
+  const result = await startPrompt({
     dom,
     api,
     db,
@@ -203,11 +208,10 @@ test("approved list with no new books stores signature and does not write", asyn
     remoteBooks: [book("ספר קיים", "מחבר")],
   });
 
-  dom.window.document.getElementById("confirmLocalImport").click();
-  const result = await pending;
   assert.equal(result.status, "completed");
   assert.equal(result.imported, 0);
   assert.equal(db.calls.length, 0);
+  assert.equal(dom.window.document.getElementById("localImportModal"), null);
   assert.equal(
     dom.window.localStorage.getItem(signatureKey),
     api.listSignature(localBooks),
