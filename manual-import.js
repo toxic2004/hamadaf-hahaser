@@ -160,14 +160,25 @@
     }
 
     const analysis = analyze(localBooks, remoteBooks);
-    const confirmed = await waitForDecision(document, analysis);
-    if (!confirmed) return { status: "cancelled", imported: 0, analysis };
 
+    // If every local book is already a duplicate, there is nothing to
+    // decide - showing a modal that can only ever import 0 books is
+    // pure friction, and worse, it actively encourages clicking
+    // "ביטול" (cancel) as the natural response to "nothing to do here" -
+    // which never stores the signature (by design, for the real case
+    // where there ARE new books and the user wants to be asked again
+    // later). That combination is exactly what caused this dialog to
+    // reappear on every single login. Skipping straight to storing the
+    // signature here doesn't touch that general cancel behavior at all -
+    // it only closes the specific case where there was never a real
+    // decision to make in the first place.
     if (!analysis.newBooks.length) {
-      document.getElementById("localImportModal").classList.remove("open");
       storeSignature(signature);
       return { status: "completed", imported: 0, analysis };
     }
+
+    const confirmed = await waitForDecision(document, analysis);
+    if (!confirmed) return { status: "cancelled", imported: 0, analysis };
 
     const confirmButton = document.getElementById("confirmLocalImport");
     const errorText = document.getElementById("localImportError");
