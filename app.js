@@ -212,6 +212,7 @@ function rowToBook(r) {
     isFavorite: Boolean(r.is_favorite),
     isRequired: Boolean(r.is_required),
     acquiredAt: r.acquired_at ? new Date(r.acquired_at).getTime() : null,
+    addedVia: r.added_via || null,
     purchasePrice:
       r.purchase_price === null || r.purchase_price === undefined
         ? null
@@ -235,6 +236,7 @@ function bookToRow(b) {
     is_favorite: Boolean(b.isFavorite),
     is_required: Boolean(b.isRequired),
     acquired_at: b.acquiredAt ? new Date(b.acquiredAt).toISOString() : null,
+    added_via: b.addedVia || null,
     purchase_price: numberOrNull(b.purchasePrice),
     new_price: numberOrNull(b.newPrice),
     created_at: new Date(b.created).toISOString(),
@@ -577,6 +579,10 @@ async function saveBook() {
     priority: priority.value,
     isFavorite: isFavorite.checked,
     isRequired: isRequired.checked,
+    // Only a brand-new book (no existing record) gets tagged "manual"
+    // here - editing an existing book must never overwrite however it
+    // was originally added (photo/ISBN scan/etc).
+    addedVia: current ? current.addedVia : "manual",
     purchasePrice: numberOrNull(purchasePrice.value),
     newPrice: numberOrNull(newPrice.value),
     acquiredAt: acquiredAt.value
