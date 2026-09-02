@@ -502,6 +502,7 @@
           notes: storedNotes,
           isbn: code,
           status: "מחפש",
+          added_via: window.__hamadafIsbnViaScan ? "isbn_scan" : "isbn_typed",
           created_at: now,
           updated_at: now,
         };
