@@ -60,6 +60,12 @@ function isAllowedTarget(rawUrl) {
     "www.e-vrit.co.il",
     "rebooks.org.il",
     "www.rebooks.org.il",
+    "booknet.co.il",
+    "www.booknet.co.il",
+    "steimatzky.co.il",
+    "www.steimatzky.co.il",
+    "findabook.co.il",
+    "www.findabook.co.il",
   ]);
   if (!ALLOWED_HOSTNAMES.has(url.hostname)) {
     return { ok: false, reason: `hostname not allowlisted: ${url.hostname}` };
