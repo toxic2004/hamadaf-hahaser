@@ -1,16 +1,6 @@
-// Pure functions for radar-image-ingest, kept separate from the Deno
-// handler so they can be unit-tested with plain Node + a mocked fetch,
-// same pattern as scanner-core.mjs. No Supabase/Deno-specific APIs here.
-
 const MODEL = "claude-haiku-4-5-20251001";
 const MAX_BOOKS_IN_PROMPT = 200;
 
-// Same approved pickup regions as the price rule used everywhere else in
-// this project (section 6 of the original spec). Checked here in code,
-// not left to the model to judge - same reasoning as
-// isApprovedPickupBranch() in the report-engine's scanner-core.mjs:
-// a fixed list is reliable, asking a model to "decide" whether a region
-// counts is not.
 const APPROVED_PICKUP_REGIONS = [
   "פתח תקווה",
   "בני ברק",
@@ -31,9 +21,6 @@ export function isApprovedPickupRegion(pickupLocation) {
   );
 }
 
-// Section 3 of the spec (kept unchanged by the architectural amendment):
-// matching happens ONLY against books already in the 'מחפש' list - never
-// invented, never matched against books in other statuses.
 export function buildBookContextLines(books) {
   return books
     .slice(0, MAX_BOOKS_IN_PROMPT)
@@ -44,15 +31,6 @@ export function buildBookContextLines(books) {
     .join("\n");
 }
 
-// contextText: free text the user optionally types alongside the image.
-// Added 2026-08-31 after a real case (Limor Noy conversation) where the
-// book titles were only in the surrounding chat text, never in the
-// screenshot itself - a single image alone can't reproduce what a human
-// reading the whole conversation would see. This doesn't fully close
-// that gap (the automated system still only sees what's typed in for
-// this one upload, not the full conversation history the user has with
-// each seller), but it closes the part that's actually fixable: letting
-// the user hand over the text that matters, not just the picture.
 export function buildExtractionPrompt(books, contextText) {
   const bookList = buildBookContextLines(books);
   const contextSection = contextText
@@ -68,8 +46,8 @@ ${contextSection}
 - matched_title: שם הספר מהרשימה שההצעה כנראה מתאימה אליו, גם אם book_id הוא null.
 - confidence: "high" / "low" / "none" - "high" רק אם ההתאמה חד-משמעית לחלוטין (כותר מדויק, לא חלק/מהדורה אחרת. שים לב: "חלק 1", "חלק 2" או מהדורה שונה הם ספר אחר, לא אותה התאמה).
 - seller_name, phone: כפי שמופיע, או null אם לא ידוע.
-- item_price: מספר בלבד, או null אם לא צוין מחיר מפורש לספר הזה בנפרד (למשל אם זה מחיר לחבילה של כמה ספרים יחד - אל תמציא פיצול, השאר null ותציין זאת ב-bundle_note).
-- shipping_price: מספר, או null אם לא צוין.
+- item_price: מספר בלבד, או null אם לא צוין מחיר מפורש לספר הזה בנפרד (למשל אם זה מחיר לחבילה של כמה ספרים יחד - אל תמציא פיצול, השאר null ותציין זאת ב-bundle_note). שים לב: שמות ספרים רבים כוללים מספר בתוך הכותר עצמו (למשל "48 החוקים", "1984", "22 חוקי השיווק") - מספר כזה הוא חלק מהשם ולעולם אינו מחיר. חפש את המחיר בהקשר מחיר מפורש (מילים כמו ש"ח, שקל, ₪, מחיר, ב-), לא בכל מספר שמופיע בטקסט.
+- shipping_price: מספר, או null אם לא צוין. אם צוין מחיר יחיד בלבד ואין כל אזכור למשלוח בנפרד, שים אותו ב-item_price ו-shipping_price יישאר null - אל תפצל מחיר בודד לשני שדות.
 - pickup_location: כפי שמופיע, או null.
 - bundle_note: אם המחיר הוא לחבילה של כמה ספרים יחד ולא ניתן לפצל, תאר זאת כאן. אחרת null.
 
@@ -79,13 +57,6 @@ ${contextSection}
 {"books": [{"book_id": string|null, "matched_title": string, "confidence": "high"|"low"|"none", "seller_name": string|null, "phone": string|null, "item_price": number|null, "shipping_price": number|null, "pickup_location": string|null, "bundle_note": string|null}]}`;
 }
 
-// Real model output (confirmed 2026-08-31 against a live Haiku call, not
-// assumed) doesn't always follow "return only JSON" literally - it can
-// wrap the JSON in markdown code fences and/or add explanatory prose
-// before or after it. Extracting the JSON substring first, rather than
-// trusting the whole response to be valid JSON, is what makes this
-// robust to that instead of discarding a perfectly good extraction as
-// "invalid_json".
 function extractJsonSubstring(rawText) {
   const fenced = rawText.match(/```(?:json)?\s*([\s\S]*?)```/i);
   if (fenced) return fenced[1].trim();
@@ -97,9 +68,6 @@ function extractJsonSubstring(rawText) {
   return rawText;
 }
 
-// Never trusts the model's output shape blindly - every field is
-// re-validated here. A malformed or partially-invented response degrades
-// to "nothing extracted" rather than passing bad data through.
 export function parseModelResponse(rawText, validBookIds) {
   let parsed;
   try {
@@ -123,10 +91,6 @@ export function parseModelResponse(rawText, validBookIds) {
         : "none";
       const rawPrice = item.item_price;
       const rawShipping = item.shipping_price;
-      // Number(null) is 0, not NaN - without this explicit check, a
-      // genuinely-unknown price (null, meaning "part of a bundle" or
-      // "not stated") would silently become a fabricated 0 ₪. Exactly
-      // the class of bug this project has hit before in production.
       const price =
         rawPrice === null || rawPrice === undefined ? NaN : Number(rawPrice);
       const shipping =
@@ -137,9 +101,6 @@ export function parseModelResponse(rawText, validBookIds) {
         book_id: bookId,
         matched_title:
           typeof item.matched_title === "string" ? item.matched_title : null,
-        // A book_id the model invented (not in this user's actual list)
-        // is worse than no match at all - forced back to "none" so the
-        // review UI never silently offers a fabricated match.
         confidence: bookId ? confidence : "none",
         seller_name:
           typeof item.seller_name === "string" ? item.seller_name : null,
@@ -151,12 +112,6 @@ export function parseModelResponse(rawText, validBookIds) {
           typeof item.pickup_location === "string"
             ? item.pickup_location
             : null,
-        // Computed here, not asked from the model - same reasoning as
-        // isApprovedPickupBranch() elsewhere in this project. This does
-        // NOT set shipping_price - it's informational for the review UI
-        // only. Actually treating approved free pickup as the total
-        // price is still a decision the reviewing human makes, exactly
-        // like the report engine's pickup handling.
         pickup_approved: isApprovedPickupRegion(
           typeof item.pickup_location === "string"
             ? item.pickup_location
@@ -214,7 +169,9 @@ export async function extractOffersFromImage({
     throw new Error(`Anthropic API error ${response.status}: ${bodyText}`);
   }
   const data = await response.json();
-  const textBlock = (data.content || []).find((block) => block.type === "text");
+  const textBlock = (data.content || []).find(
+    (block) => block.type === "text",
+  );
   if (!textBlock) return { books: [], error: "no_text_in_response" };
   return parseModelResponse(
     textBlock.text,
