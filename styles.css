@@ -132,7 +132,7 @@ h1 {
   width: 100%;
   border: 1px solid var(--line);
   border-radius: 14px;
-  padding: 13px 43px 13px 14px;
+  padding: 13px 43px 13px 34px;
   background: var(--card);
   outline: none;
   box-shadow: var(--shadow);
@@ -143,6 +143,31 @@ h1 {
   top: 12px;
   color: var(--muted);
   font-weight: 400;
+}
+.searchClear {
+  position: absolute;
+  left: 6px;
+  top: 6px;
+  width: 28px;
+  height: 28px;
+  border: none;
+  box-shadow: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 14px;
+  cursor: pointer;
+  border-radius: 999px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+.searchClear.visible {
+  display: flex;
+}
+.searchClear:active {
+  background: var(--green2);
+  color: var(--green);
 }
 button,
 .select {
