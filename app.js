@@ -327,18 +327,32 @@ async function selectCover(src) {
   toast("הכריכה הועתקה, נשמרה וסונכרנה");
 }
 async function importCover(src) {
+  // Most third-party sites don't send CORS headers on their images, so
+  // a direct browser fetch(src, {mode:"cors"}) fails silently for
+  // almost every result a person picks from Google Image Search - this
+  // isn't a bug that shows up sometimes, it's the default state of the
+  // web. Routing through fetch-cover-image (server-to-server, no CORS
+  // restriction) is what actually makes cover selection work in
+  // practice, confirmed 2026-09-02.
   try {
-    const r = await fetch(src, { mode: "cors" });
-    if (!r.ok) throw new Error();
-    const blob = await r.blob();
-    if (!blob.type.startsWith("image/")) throw new Error();
-    const data = await new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result);
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
-    return await compress(data);
+    const { data: sessionData } = await db.auth.getSession();
+    const token = sessionData?.session?.access_token;
+    if (!token) return null;
+    const response = await fetch(
+      db.supabaseUrl + "/functions/v1/fetch-cover-image",
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: "Bearer " + token,
+        },
+        body: JSON.stringify({ url: src }),
+      },
+    );
+    if (!response.ok) return null;
+    const result = await response.json();
+    if (!result.dataUrl) return null;
+    return await compress(result.dataUrl);
   } catch (e) {
     return null;
   }
