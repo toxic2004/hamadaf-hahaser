@@ -58,6 +58,8 @@ function isAllowedTarget(rawUrl) {
   const ALLOWED_HOSTNAMES = new Set([
     "e-vrit.co.il",
     "www.e-vrit.co.il",
+    "rebooks.org.il",
+    "www.rebooks.org.il",
   ]);
   if (!ALLOWED_HOSTNAMES.has(url.hostname)) {
     return { ok: false, reason: `hostname not allowlisted: ${url.hostname}` };
