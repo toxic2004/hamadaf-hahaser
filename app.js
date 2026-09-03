@@ -109,7 +109,16 @@ async function init() {
   });
 }
 function bind() {
-  search.oninput = render;
+  search.oninput = () => {
+    searchClear.classList.toggle("visible", Boolean(search.value));
+    render();
+  };
+  searchClear.onclick = () => {
+    search.value = "";
+    searchClear.classList.remove("visible");
+    render();
+    search.focus();
+  };
   sort.onchange = render;
   view.onclick = () => {
     state.view = state.view === "grid" ? "list" : "grid";
