@@ -102,8 +102,21 @@ app.get("/render", async (req, res) => {
       locale: "he-IL",
     });
     const page = await context.newPage();
+    // "networkidle" never fires on sites with persistent background
+    // connections (analytics beacons, live-chat widgets, ad trackers -
+    // common on commercial e-commerce sites). Confirmed live 2026-09-03:
+    // Steimatzky timed out here every time with networkidle, while
+    // e-vrit/booknet/findabook all passed it fine. "domcontentloaded" is
+    // a strictly earlier milestone than "networkidle" (fires first, by
+    // definition) - anything that already passed networkidle still
+    // passes this, so this is a pure widening of compatibility, not a
+    // behavior change for the sites that already worked. The next step
+    // (waitForFunction below) already handles waiting for the page's
+    // own loading indicator to actually clear, so switching this
+    // doesn't remove any real readiness check - it removes the one that
+    // was never a reliable signal for a page like this to begin with.
     await page.goto(allowed.url.toString(), {
-      waitUntil: "networkidle",
+      waitUntil: "domcontentloaded",
       timeout: NAV_TIMEOUT_MS,
     });
     // See RESULTS_WAIT_MS comment above: wait for the page's own loading
