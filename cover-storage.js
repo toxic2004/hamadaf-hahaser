@@ -5,6 +5,17 @@
   const BUCKET = "book-covers";
   const PATH_PREFIX = "storage-path:";
   const UPLOAD_TIMEOUT_MS = 20000;
+  // Selecting a new cover for a book (upload -> update DB -> delete the
+  // book's previous cover file) is not safe to run twice concurrently
+  // for the same book: two overlapping calls can each capture a stale
+  // "previous cover" value and end up deleting the file the *other*
+  // call just uploaded, leaving books.cover_path pointing at a file
+  // that no longer exists (confirmed in production 2026-09-04 - a
+  // book's cover_path referenced an object that had been deleted, with
+  // zero files left in storage for that book at all). Track in-flight
+  // saves per book and ignore extra clicks until the current one
+  // finishes, instead of trying to make concurrent saves safe.
+  const coverSaveInFlight = new Set();
   const originalRowToBook = rowToBook;
   const originalBookToRow = bookToRow;
   const originalLoadRemote = loadRemote;
@@ -214,6 +225,11 @@
     const book = state.books.find((item) => item.id === state.coverTarget);
     if (!book || !state.user) return;
 
+    if (coverSaveInFlight.has(book.id)) {
+      return toast("כבר מעדכן כריכה לספר הזה, נא להמתין לסיום");
+    }
+    coverSaveInFlight.add(book.id);
+
     let path = "";
     const previousPath = book.coverPath || "";
     try {
@@ -258,6 +274,8 @@
           ? "העלאת הכריכה ארכה יותר מדי. נסה שוב"
           : "שמירת הכריכה נכשלה. הכריכה הקודמת נשארה ללא שינוי",
       );
+    } finally {
+      coverSaveInFlight.delete(book.id);
     }
   };
 
