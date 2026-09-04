@@ -281,7 +281,18 @@ async function loadRemote() {
 function openGoogleImages(title, target = "form") {
   state.coverTarget = target;
   coverSearchModal.classList.add("open");
-  runCoverSearch('"' + title + '"');
+  // Wrapping the *full* stored title (often "title: long subtitle" -
+  // isbn.html concatenates Google Books' title+subtitle into one
+  // field) in literal quotes as an exact-phrase search was too
+  // restrictive: real cover listings almost never include the full
+  // subtitle verbatim, so this returned zero results for books that
+  // are genuinely available online (confirmed 2026-09-04 - "מצוינות
+  // בניהול: שש דרכי הפעולה..." has real covers on multiple Israeli
+  // bookstore sites, but the exact-phrase search found none). Use just
+  // the main title before any colon, without forcing exact-phrase
+  // matching.
+  const mainTitle = String(title || "").split(":")[0].trim() || title;
+  runCoverSearch(mainTitle);
 }
 function runCoverSearch(query, tries = 0) {
   const element =
