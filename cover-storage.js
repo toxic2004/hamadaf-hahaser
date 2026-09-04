@@ -22,6 +22,37 @@
   const originalSaveBook = saveBook;
   const originalEditBook = editBook;
   const originalOpenDetail = openDetail;
+  // ROOT CAUSE (confirmed 2026-09-04 via a real user-visible error
+  // message): persist() writes the *entire* state.books array,
+  // including full base64 cover images, to localStorage on every save.
+  // With Storage-backed covers this is unnecessary (the real cover
+  // lives in Supabase Storage; state.books only needs the small
+  // coverPath string), and legacy base64 covers plus this duplication
+  // pushed total size over the browser's localStorage quota. When that
+  // write throws (QuotaExceededError), it was happening *inside* the
+  // try block of selectCoverWithStorage/saveBookWithStorage, so a
+  // successful upload+DB-update was reported to the person as a total
+  // failure. Fix: strip heavy image fields before writing to
+  // localStorage, and never let a failure here (which is just an
+  // offline-cache write, not the source of truth) propagate as an
+  // error to the caller.
+  const LOCAL_STORAGE_KEY = "hamadaf-hahaser-v1";
+  persist = function persistWithoutHeavyCovers() {
+    try {
+      const lightweight = state.books.map((book) => {
+        const copy = Object.assign({}, book);
+        copy.cover = "";
+        copy.legacyCover = "";
+        return copy;
+      });
+      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(lightweight));
+    } catch (error) {
+      console.error(
+        "Persisting offline cache failed (data is still safe in Supabase)",
+        error,
+      );
+    }
+  };
 
   function pathMarker(path) {
     return PATH_PREFIX + path;
@@ -269,18 +300,10 @@
     } catch (error) {
       console.error("Cover selection upload failed", error);
       if (path) await db.storage.from(BUCKET).remove([path]);
-      // TEMPORARY (2026-09-04): every logged network call for this flow
-      // succeeds (200 on upload/sign/delete) yet this catch still fires
-      // for Sheneor - meaning something throws AFTER the network calls
-      // complete (render, persist, or an unexpected shape somewhere).
-      // Surfacing the real error text so the next failure is diagnosable
-      // instead of guessed at. Remove once root-caused.
-      const detail =
-        error && error.message ? " (" + error.message + ")" : "";
       toast(
         error && error.message === "Cover upload timed out"
           ? "העלאת הכריכה ארכה יותר מדי. נסה שוב"
-          : "שמירת הכריכה נכשלה. הכריכה הקודמת נשארה ללא שינוי" + detail,
+          : "שמירת הכריכה נכשלה. הכריכה הקודמת נשארה ללא שינוי",
       );
     } finally {
       coverSaveInFlight.delete(book.id);
