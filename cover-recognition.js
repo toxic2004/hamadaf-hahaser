@@ -3,7 +3,14 @@
   const $ = (id) => document.getElementById(id);
   let imageObjectUrl = "",
     selectedCover = "",
-    lastCandidates = [];
+    lastCandidates = [],
+    // The user's own photo, compressed to a safe size for storage - used
+    // as the fallback cover when no external match is found, instead of
+    // sending the person off to search for a different image entirely
+    // when they're holding the actual book cover right here. Added
+    // 2026-09-02 after feedback that the manual-search-links fallback
+    // didn't actually solve anything for this exact reason.
+    ownPhotoCoverDataUrl = "";
 
   function escapeHtml(value) {
     return String(value || "").replace(
@@ -236,6 +243,32 @@
     return best ? best.text : "";
   }
 
+  // Resizes/re-encodes the user's own photo to a JPEG small enough to
+  // store safely in the books.cover column (large raw phone photos as
+  // base64 have caused failures/truncation there before).
+  function compressOwnPhoto(file) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      const objectUrl = URL.createObjectURL(file);
+      img.onload = () => {
+        const maxDim = 800;
+        const scale = Math.min(1, maxDim / Math.max(img.naturalWidth, img.naturalHeight));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
+        canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        URL.revokeObjectURL(objectUrl);
+        resolve(canvas.toDataURL("image/jpeg", 0.8));
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(objectUrl);
+        resolve("");
+      };
+      img.src = objectUrl;
+    });
+  }
+
   async function recognizeCover() {
     const file = $("coverImage").files[0];
     if (!file) return setCoverMessage("צריך לבחור תמונה.", true);
@@ -253,6 +286,7 @@
     $("coverSaveArea").classList.add("hidden");
     setCoverMessage("מזהה את הספר לפי הכריכה...");
     setProgress(10);
+    ownPhotoCoverDataUrl = await compressOwnPhoto(file);
 
     // Below this, the model itself is signaling low confidence - real
     // logs (2026-09-02, "תולדות האנושות" cover) showed it will still
@@ -398,12 +432,15 @@
         const lines = text.split(/\n+/).filter(Boolean);
         $("coverTitle").value = lines[0] || "";
         $("coverAuthor").value = lines[1] || "";
-        selectedCover = "";
-        $("selectedCover").removeAttribute("src");
+        selectedCover = ownPhotoCoverDataUrl || "";
+        if (selectedCover) $("selectedCover").src = selectedCover;
+        else $("selectedCover").removeAttribute("src");
         $("coverSaveArea").classList.remove("hidden");
-        renderManualCoverSearchLinks(lines[0] || text);
+        if (!selectedCover) renderManualCoverSearchLinks(lines[0] || text);
         return setCoverMessage(
-          "הספר זוהה, אך לא נמצאה כריכה תואמת ב Google Books. בדוק את הפרטים לפני השמירה, או חפש כריכה ידנית באתרים למטה.",
+          selectedCover
+            ? "הספר זוהה, אך לא נמצאה כריכה תואמת ב Google Books - נשמרת התמונה שצילמת בעצמך. בדוק את הפרטים לפני השמירה."
+            : "הספר זוהה, אך לא נמצאה כריכה תואמת ב Google Books. בדוק את הפרטים לפני השמירה, או חפש כריכה ידנית באתרים למטה.",
           true,
         );
       }
