@@ -542,9 +542,47 @@ function openAdd() {
   acquiredAt.value = "";
   modal.classList.add("open");
 }
-function findBook() {
+// Checks Google Books first (structured, reliable match by title+author)
+// before falling back to the broader Google Images search. Only used
+// for the "add a new book" form - editing an existing book's cover
+// continues to go straight to the wide image search, unchanged.
+async function googleBooksCoverUrl(title, authorName) {
+  try {
+    let query = "intitle:" + encodeURIComponent(title);
+    if (authorName) query += "+inauthor:" + encodeURIComponent(authorName);
+    const response = await fetch(
+      "https://www.googleapis.com/books/v1/volumes?q=" +
+        query +
+        "&maxResults=5",
+    );
+    if (!response.ok) return "";
+    const payload = await response.json();
+    const items = payload.items || [];
+    for (const item of items) {
+      const links = item.volumeInfo && item.volumeInfo.imageLinks;
+      const url = links && (links.thumbnail || links.smallThumbnail);
+      if (url) return url.replace(/^http:/, "https:");
+    }
+    return "";
+  } catch (error) {
+    console.error("Google Books cover lookup failed", error);
+    return "";
+  }
+}
+async function findBook() {
   const title = bookTitle.value.trim();
   if (!title) return toast("צריך להזין שם ספר");
+  const bookCoverUrl = await googleBooksCoverUrl(title, author.value.trim());
+  if (bookCoverUrl) {
+    const stored = await importCover(bookCoverUrl);
+    if (stored) {
+      coverData.value = stored;
+      showPreview(stored);
+      return toast(
+        "נמצאה כריכה ב Google Books ונבחרה. אפשר לפתוח חיפוש תמונות כדי לבחור אחרת.",
+      );
+    }
+  }
   openGoogleImages(title, "form");
 }
 function loadImage() {
