@@ -400,7 +400,6 @@
         $("coverAuthor").value = lines[1] || "";
         selectedCover = "";
         $("selectedCover").removeAttribute("src");
-        $("coverNotes").value = "זוהה מתמונת כריכה, ללא התאמה במאגר הכריכות";
         $("coverSaveArea").classList.remove("hidden");
         renderManualCoverSearchLinks(lines[0] || text);
         return setCoverMessage(
@@ -478,7 +477,6 @@
     );
     if (selectedCover) $("selectedCover").src = selectedCover;
     else $("selectedCover").removeAttribute("src");
-    $("coverNotes").value = "זוהה חזותית מתמונת כריכה";
     $("coverSaveArea").classList.remove("hidden");
     $("coverSaveArea").scrollIntoView({ behavior: "smooth", block: "start" });
   }
