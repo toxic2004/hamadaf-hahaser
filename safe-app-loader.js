@@ -218,7 +218,7 @@
       document.head.appendChild(appScript);
 
       const storageScript = document.createElement("script");
-      storageScript.src = "./cover-storage.js?v=quota-fix-20260904-1";
+      storageScript.src = "./cover-storage.js?v=session-race-fix-20260904-1";
       storageScript.async = false;
       storageScript.dataset.hamadafCoverStorage = "true";
       storageScript.onerror = function () {

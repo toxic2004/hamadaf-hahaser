@@ -360,5 +360,19 @@
 
   save.onclick = saveBook;
 
-  if (state.user) refreshStoredCovers();
+  // ROOT CAUSE (confirmed 2026-09-04): checking the synchronous
+  // `state.user` here is a race against app.js's own async auth
+  // restoration. If app.js's connected()/loadRemote() already fired
+  // (using the ORIGINAL, not-yet-wrapped loadRemote) before this script
+  // finished evaluating and wrapping loadRemote, the initial book list
+  // loads with correct cover_path values but never gets signed URLs
+  // generated for them - covers were correctly saved server-side the
+  // whole time (verified: file exists in Storage, cover_path correct),
+  // but never displayed until the person re-triggers a cover save.
+  // Querying the session directly (async, reliable regardless of
+  // app.js's internal timing) instead of trusting this script's
+  // snapshot of `state.user` fixes the race.
+  db.auth.getSession().then(({ data }) => {
+    if (data && data.session) refreshStoredCovers();
+  });
 })();
