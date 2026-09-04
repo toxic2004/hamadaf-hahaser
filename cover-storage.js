@@ -269,10 +269,18 @@
     } catch (error) {
       console.error("Cover selection upload failed", error);
       if (path) await db.storage.from(BUCKET).remove([path]);
+      // TEMPORARY (2026-09-04): every logged network call for this flow
+      // succeeds (200 on upload/sign/delete) yet this catch still fires
+      // for Sheneor - meaning something throws AFTER the network calls
+      // complete (render, persist, or an unexpected shape somewhere).
+      // Surfacing the real error text so the next failure is diagnosable
+      // instead of guessed at. Remove once root-caused.
+      const detail =
+        error && error.message ? " (" + error.message + ")" : "";
       toast(
         error && error.message === "Cover upload timed out"
           ? "העלאת הכריכה ארכה יותר מדי. נסה שוב"
-          : "שמירת הכריכה נכשלה. הכריכה הקודמת נשארה ללא שינוי",
+          : "שמירת הכריכה נכשלה. הכריכה הקודמת נשארה ללא שינוי" + detail,
       );
     } finally {
       coverSaveInFlight.delete(book.id);
