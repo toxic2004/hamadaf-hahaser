@@ -74,7 +74,6 @@
     $("coverPreview").removeAttribute("src");
     $("coverOcrText").value = "";
     $("coverResults").innerHTML = "";
-    if ($("manualCoverLinks")) $("manualCoverLinks").innerHTML = "";
     $("coverSaveArea").classList.add("hidden");
     $("coverRecognize").disabled = true;
     setProgress(null);
@@ -361,45 +360,6 @@
     }
   }
 
-  // Google Books coverage for Hebrew/Israeli books is often thin. When
-  // it comes up empty, point the person at a one-click, pre-filled
-  // search on Israeli bookstore sites instead of leaving them with
-  // nothing - a site-restricted Google search is used rather than each
-  // site's own search box, since their internal search URL formats
-  // aren't publicly documented and guessing wrong would silently give
-  // broken links.
-  function renderManualCoverSearchLinks(queryText) {
-    const container = $("manualCoverLinks");
-    if (!container) return;
-    const q = normalizeText(queryText).slice(0, 120);
-    if (!q) {
-      container.innerHTML = "";
-      return;
-    }
-    const sites = [
-      { label: "עברית (e-vrit)", domain: "e-vrit.co.il" },
-      { label: "סטימצקי", domain: "steimatzky.co.il" },
-      { label: "צומת ספרים", domain: "booknet.co.il" },
-    ];
-    container.innerHTML =
-      '<p class="sub">לא נמצאה כריכה אוטומטית - אפשר לחפש ידנית:</p><div class="actions">' +
-      sites
-        .map((site) => {
-          const url =
-            "https://www.google.com/search?q=" +
-            encodeURIComponent("site:" + site.domain + " " + q);
-          return (
-            '<a class="button ghost" target="_blank" rel="noopener" href="' +
-            escapeHtml(url) +
-            '">' +
-            escapeHtml(site.label) +
-            "</a>"
-          );
-        })
-        .join("") +
-      "</div>";
-  }
-
   async function searchCoverBooks(automatic = false) {
     const text = normalizeText($("coverOcrText").value);
     const queries = buildQueries(text);
@@ -436,17 +396,15 @@
         if (selectedCover) $("selectedCover").src = selectedCover;
         else $("selectedCover").removeAttribute("src");
         $("coverSaveArea").classList.remove("hidden");
-        if (!selectedCover) renderManualCoverSearchLinks(lines[0] || text);
         return setCoverMessage(
           selectedCover
             ? "הספר זוהה, אך לא נמצאה כריכה תואמת ב Google Books - נשמרת התמונה שצילמת בעצמך. בדוק את הפרטים לפני השמירה."
-            : "הספר זוהה, אך לא נמצאה כריכה תואמת ב Google Books. בדוק את הפרטים לפני השמירה, או חפש כריכה ידנית באתרים למטה.",
+            : "הספר זוהה, אך לא נמצאה כריכה תואמת ב Google Books, והתמונה שצילמת לא נטענה. בדוק את הפרטים לפני השמירה.",
           true,
         );
       }
 
-      if ($("manualCoverLinks")) $("manualCoverLinks").innerHTML = "";
-      $("coverResults").innerHTML = lastCandidates
+        $("coverResults").innerHTML = lastCandidates
         .map((item, index) => {
           const info = item.volumeInfo || {};
           const title = info.title || "ללא שם";
@@ -581,7 +539,7 @@
     section.id = "coverRecognizer";
     section.className = "cover-tool";
     section.innerHTML =
-      '<h2>זיהוי חזותי של ספר לפי כריכה</h2><p class="sub">צלם את הכריכה ישר ובתאורה טובה. המערכת מזהה את זהות הספר, ולא מעתיקה את כל הטקסט שעל הכריכה.</p><div class="field"><label>צילום או בחירת תמונה</label><input id="coverImage" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif"></div><div class="preview"><img id="coverPreview" alt="תצוגת הכריכה"><div><div class="actions"><button id="coverRecognize" class="primary" type="button" disabled>זיהוי הספר</button><button id="coverReset" class="ghost" type="button">ניקוי</button></div><div id="coverProgress" class="progress"><span id="coverProgressBar"></span></div></div></div><div id="coverMessage" class="message" aria-live="polite"></div><div class="field"><label>שם שזוהה או חיפוש ידני</label><textarea id="coverOcrText" placeholder="שם הספר בשורה הראשונה ושם המחבר בשורה השנייה"></textarea></div><button id="coverSearch" class="primary" type="button">חיפוש מחדש</button><div id="coverResults" class="results"></div><div id="manualCoverLinks"></div><div id="coverSaveArea" class="hidden"><div class="preview"><img id="selectedCover" alt="כריכת הספר"><div><div class="field"><label>שם הספר</label><input id="coverTitle"></div><div class="field"><label>שם המחבר</label><input id="coverAuthor"></div></div></div><div class="field"><label>הערות</label><textarea id="coverNotes"></textarea></div><div class="actions"><button id="coverSave" class="primary" type="button">שמירה במדף החסר</button><button id="coverCancel" class="ghost" type="button">ביטול</button></div></div>';
+      '<h2>זיהוי חזותי של ספר לפי כריכה</h2><p class="sub">צלם את הכריכה ישר ובתאורה טובה. המערכת מזהה את זהות הספר, ולא מעתיקה את כל הטקסט שעל הכריכה.</p><div class="field"><label>צילום או בחירת תמונה</label><input id="coverImage" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif"></div><div class="preview"><img id="coverPreview" alt="תצוגת הכריכה"><div><div class="actions"><button id="coverRecognize" class="primary" type="button" disabled>זיהוי הספר</button><button id="coverReset" class="ghost" type="button">ניקוי</button></div><div id="coverProgress" class="progress"><span id="coverProgressBar"></span></div></div></div><div id="coverMessage" class="message" aria-live="polite"></div><div class="field"><label>שם שזוהה או חיפוש ידני</label><textarea id="coverOcrText" placeholder="שם הספר בשורה הראשונה ושם המחבר בשורה השנייה"></textarea></div><button id="coverSearch" class="primary" type="button">חיפוש מחדש</button><div id="coverResults" class="results"></div><div id="coverSaveArea" class="hidden"><div class="preview"><img id="selectedCover" alt="כריכת הספר"><div><div class="field"><label>שם הספר</label><input id="coverTitle"></div><div class="field"><label>שם המחבר</label><input id="coverAuthor"></div></div></div><div class="field"><label>הערות</label><textarea id="coverNotes"></textarea></div><div class="actions"><button id="coverSave" class="primary" type="button">שמירה במדף החסר</button><button id="coverCancel" class="ghost" type="button">ביטול</button></div></div>';
     appCard.appendChild(section);
 
     $("coverImage").onchange = () => {
