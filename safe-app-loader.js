@@ -184,7 +184,7 @@
 
   loadManualImport()
     .then(function () {
-      return fetch("./app.js?v=google-books-first-cover-20260904-1", {
+      return fetch("./app.js?v=cover-search-query-fix-20260904-1", {
         cache: "no-store",
       });
     })
