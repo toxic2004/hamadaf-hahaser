@@ -66,6 +66,8 @@ function isAllowedTarget(rawUrl) {
     "www.steimatzky.co.il",
     "findabook.co.il",
     "www.findabook.co.il",
+    "simania.co.il",
+    "www.simania.co.il",
   ]);
   if (!ALLOWED_HOSTNAMES.has(url.hostname)) {
     return { ok: false, reason: `hostname not allowlisted: ${url.hostname}` };
