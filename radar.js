@@ -111,6 +111,18 @@ function purchaseFormHtml(offer) {
   </div>`;
 }
 
+// Total price only when shipping is genuinely known - never estimate
+// or assume free shipping for sorting purposes (same rule as
+// price-utils.js's totalPrice()).
+function offerTotalOrNull(offer) {
+  const item = Number(offer.item_price);
+  const shippingKnown =
+    offer.shipping_price !== null && offer.shipping_price !== undefined;
+  if (!Number.isFinite(item) || !shippingKnown) return null;
+  const shipping = Number(offer.shipping_price);
+  return Number.isFinite(shipping) ? item + shipping : null;
+}
+
 function offerRow(offer, isCheapest, activeOfferCount) {
   const isPurchased = offer.status === "נקנתה";
   const isActive = offer.status === "פעילה";
@@ -206,7 +218,16 @@ function bookCard(book, bookOffers, isArchived) {
   // doesn't accumulate clutter from offers the user already said no to.
   const sorted = [...bookOffers]
     .filter((offer) => offer.status !== "נדחתה")
-    .sort((a, b) => Number(a.item_price) - Number(b.item_price));
+    .sort((a, b) => {
+      const totalA = offerTotalOrNull(a);
+      const totalB = offerTotalOrNull(b);
+      if (totalA === null && totalB === null) {
+        return Number(a.item_price) - Number(b.item_price);
+      }
+      if (totalA === null) return 1;
+      if (totalB === null) return -1;
+      return totalA - totalB;
+    });
   const activeOffers = sorted.filter((offer) => offer.status === "פעילה");
   // Only meaningful with real competition - one offer being "the cheapest"
   // among itself isn't worth a badge.
@@ -899,9 +920,16 @@ $("imageZoomOverlay").onclick = hideImageZoom;
 $("imageZoomOverlay").onpointerup = hideImageZoom;
 
 const AUTO_REFRESH_MS = 90000;
+let lastRadarRefreshAt = 0;
+function refreshDataIfDue() {
+  const now = Date.now();
+  if (now - lastRadarRefreshAt < 5000) return;
+  lastRadarRefreshAt = now;
+  loadData();
+}
 setInterval(() => {
-  if (user && document.visibilityState === "visible") loadData();
+  if (user && document.visibilityState === "visible") refreshDataIfDue();
 }, AUTO_REFRESH_MS);
 document.addEventListener("visibilitychange", () => {
-  if (user && document.visibilityState === "visible") loadData();
+  if (user && document.visibilityState === "visible") refreshDataIfDue();
 });
