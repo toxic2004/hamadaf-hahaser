@@ -21,7 +21,12 @@ function localAssetsFromHtml(html) {
 test("search covers title, author, ISBN and notes", () => {
   const patch = read("search-patch.js");
   assert.match(patch, /\[b\.title, b\.author, b\.isbn, b\.notes\]/);
-  assert.match(read("index.html"), /חיפוש לפי ספר, מחבר או ISBN/);
+  // The placeholder wording itself is a product decision (changed
+  // 2026-09-02 to be friendlier, no longer spelling out "ISBN") - this
+  // just checks a placeholder attribute exists on the search input, not
+  // its exact wording. The real assertion of search *behavior* is the
+  // regex above.
+  assert.match(read("index.html"), /id="search" placeholder="[^"]+"/);
 });
 
 test("duplicate detection covers ISBN, title and author, recycle bin restore and different authors", () => {
@@ -87,10 +92,13 @@ test("user scoped screens filter reads and mutations by user id", () => {
 test("manual import signature is loaded through a cache-busted loader", () => {
   const index = read("index.html");
   const loader = read("safe-app-loader.js");
-  assert.match(
-    index,
-    /safe-app-loader\.js\?v=quality-cover-cleanup-20260810-1/,
-  );
+  // Match *any* cache-busting version tag rather than one specific
+  // historical value - the intent here is "index.html loads
+  // safe-app-loader.js with a version query string", not "the version
+  // string is frozen forever". Hardcoding one exact value made this
+  // test break on every legitimate cache-bust (happened repeatedly
+  // 2026-09-04).
+  assert.match(index, /safe-app-loader\.js\?v=[\w-]+/);
   assert.match(
     loader,
     /manual-import\.js\?v=local-import-signature-20260729-1/,
