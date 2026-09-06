@@ -26,8 +26,14 @@
     const item = numberOrNull(offer.item_price ?? offer.itemPrice);
     const shippingKnown = Boolean(offer.shipping_known ?? offer.shippingKnown);
     const shipping = numberOrNull(offer.shipping_price ?? offer.shippingPrice);
-    if (item === null || !shippingKnown) return null;
-    return item + (shipping ?? 0);
+    // Previously fell back to "shipping ?? 0" here, which silently
+    // treated "marked as known but no amount entered" as free shipping -
+    // exactly the invented-total-price pattern the project explicitly
+    // forbids. A genuine 0 (free shipping/pickup) still passes through
+    // numberOrNull() fine; only a truly missing amount now correctly
+    // makes the total "unknown" instead of assumed-free.
+    if (item === null || !shippingKnown || shipping === null) return null;
+    return item + shipping;
   }
 
   function calculateDeal(offer, now = new Date()) {
@@ -124,7 +130,9 @@
       .map((value) =>
         String(value || "")
           .trim()
-          .toLowerCase(),
+          .toLowerCase()
+          .replace(/\s+/g, " ")
+          .replace(/[.,;:!?'"׳״]/g, ""),
       )
       .join("|");
     let hash = 2166136261;

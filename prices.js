@@ -95,11 +95,15 @@ function formOffer() {
     ad_image_url: $("adImageUrl").value.trim(),
     condition: $("condition").value,
     match_type: $("matchType").value,
-    edition_language: "עברית",
+    edition_language: $("editionLanguage").value,
     location: $("location").value,
     item_price: HamadafPrice.numberOrNull($("itemPrice").value),
+    // No "?? 0" fallback here on purpose: if "משלוח ידוע" is checked but
+    // no amount was typed, this stays null (unknown) rather than
+    // inventing free shipping. saveOffer() blocks the save in that case
+    // instead of silently guessing.
     shipping_price: $("shippingKnown").checked
-      ? (HamadafPrice.numberOrNull($("shippingPrice").value) ?? 0)
+      ? HamadafPrice.numberOrNull($("shippingPrice").value)
       : null,
     shipping_known: $("shippingKnown").checked,
     reference_new_price: HamadafPrice.numberOrNull($("referencePrice").value),
@@ -189,6 +193,7 @@ function resetForm() {
   $("shippingPrice").disabled = true;
   $("condition").value = "יד שנייה";
   $("matchType").value = "מדויקת";
+  $("editionLanguage").value = "עברית";
   $("referencePrice").value = currentBook()?.new_price ?? "";
   $("formMessage").textContent = "";
   renderScore();
@@ -202,6 +207,7 @@ function editOffer(id) {
   $("source").value = offer.source;
   $("condition").value = offer.condition;
   $("matchType").value = offer.match_type;
+  $("editionLanguage").value = offer.edition_language || "עברית";
   $("itemPrice").value = offer.item_price ?? "";
   $("shippingKnown").checked = offer.shipping_known;
   $("shippingPrice").disabled = !offer.shipping_known;
@@ -249,6 +255,14 @@ async function saveOffer() {
     !HamadafPrice.httpUrl($("adImageUrl").value)
   ) {
     $("formMessage").textContent = "קישור התמונה חייב להתחיל ב http או https.";
+    return;
+  }
+  if (
+    $("shippingKnown").checked &&
+    HamadafPrice.numberOrNull($("shippingPrice").value) === null
+  ) {
+    $("formMessage").textContent =
+      "סימנת שמחיר המשלוח ידוע אבל לא הוזן סכום. הזן סכום או בטל את הסימון.";
     return;
   }
   const now = new Date();
@@ -442,6 +456,7 @@ $("shippingKnown").onchange = () => {
   "source",
   "condition",
   "matchType",
+  "editionLanguage",
   "itemPrice",
   "shippingPrice",
   "referencePrice",
@@ -453,9 +468,19 @@ db.auth.getSession().then(({ data }) => showSession(data.session));
 db.auth.onAuthStateChange((event, session) => showSession(session));
 
 const AUTO_REFRESH_MS = 90000;
+let lastOffersRefreshAt = 0;
+function refreshOffersIfDue() {
+  const now = Date.now();
+  // Skip if something already refreshed within the last 5s (interval
+  // timer and a tab visibility change firing back-to-back was causing
+  // an unnecessary duplicate fetch).
+  if (now - lastOffersRefreshAt < 5000) return;
+  lastOffersRefreshAt = now;
+  loadOffers();
+}
 setInterval(() => {
-  if (user && document.visibilityState === "visible") loadOffers();
+  if (user && document.visibilityState === "visible") refreshOffersIfDue();
 }, AUTO_REFRESH_MS);
 document.addEventListener("visibilitychange", () => {
-  if (user && document.visibilityState === "visible") loadOffers();
+  if (user && document.visibilityState === "visible") refreshOffersIfDue();
 });
